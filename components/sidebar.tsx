@@ -67,7 +67,7 @@ export default function Sidebar() {
             <div className="mt-auto border-t border-slate-200 pt-4">
                 <button className="flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left text-sm text-slate-600 hover:bg-slate-100">
                     <Heart size={18} />
-                    My Trips
+                    My Tripss
                 </button>
 
                 <button className="flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left text-sm text-slate-600 hover:bg-slate-100">

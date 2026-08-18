@@ -16,6 +16,9 @@ import {
     Heart,
     User,
     Settings,
+    Headphones,
+    Plane,
+    MapPinned,
 } from "lucide-react";
 
 export default function Sidebar() {
@@ -87,85 +90,195 @@ export default function Sidebar() {
         },
     ];
 
+    const isActive = (href: string) => {
+        if (href === "/") {
+            return pathname === "/";
+        }
+
+        return pathname === href;
+    };
+
     return (
-        <aside className="sticky top-0 flex h-screen w-56 shrink-0 flex-col border-r border-slate-200 bg-white p-4">
+        <aside className="sticky top-0 flex h-screen w-64 shrink-0 flex-col border-r border-slate-200 bg-white">
 
-            {/* ==============================
-                LOGO
-            ============================== */}
-            <div>
-                <h1 className="text-2xl font-bold text-blue-600">
-                    GhumoIndia
-                </h1>
+            {/* =====================================
+                PILGORA BRAND
+            ====================================== */}
+            <div className="border-b border-slate-100 px-6 py-6">
 
-                <p className="mt-2 text-xs leading-5 text-slate-500">
-                    You decide where.
-                    <br />
-                    We plan how.
-                </p>
+                <Link
+                    href="/"
+                    className="group flex items-center gap-3"
+                >
+                    {/* Logo */}
+                    <div className="relative flex h-11 w-11 items-center justify-center rounded-full bg-blue-600 shadow-lg shadow-blue-100 transition-transform duration-200 group-hover:scale-105">
+
+                        <Plane
+                            size={24}
+                            strokeWidth={2.4}
+                            className="rotate-[-25deg] text-white"
+                        />
+
+                    </div>
+
+                    {/* Brand Name */}
+                    <div>
+                        <h1 className="text-[26px] font-bold leading-none tracking-tight text-slate-900">
+                            Pilgora
+                        </h1>
+
+                        <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-blue-600">
+                            Travel Smarter
+                        </p>
+                    </div>
+                </Link>
+
+                {/* Tagline */}
+                <div className="mt-5">
+                    <p className="text-[13px] leading-5 text-slate-500">
+                        You decide where.
+                    </p>
+
+                    <p className="text-[13px] font-semibold leading-5 text-slate-800">
+                        We plan how.
+                    </p>
+                </div>
+
             </div>
 
-            {/* ==============================
+
+            {/* =====================================
                 MAIN NAVIGATION
-            ============================== */}
-            <nav className="mt-8 space-y-2">
+            ====================================== */}
+            <nav className="flex-1 overflow-y-auto px-4 py-5">
 
-                {menuItems.map((item) => {
-                    const Icon = item.icon;
+                <p className="mb-3 px-3 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">
+                    Your Trip
+                </p>
 
-                    const isActive =
-                        pathname === item.href;
+                <div className="space-y-1">
 
-                    return (
-                        <Link
-                            key={item.name}
-                            href={item.href}
-                            className={`flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left text-sm transition ${
-                                isActive
-                                    ? "bg-blue-50 font-semibold text-blue-700"
-                                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-                            }`}
-                        >
-                            <Icon size={18} />
+                    {menuItems.map((item) => {
 
-                            <span>
-                                {item.name}
-                            </span>
-                        </Link>
-                    );
-                })}
+                        const Icon = item.icon;
+                        const active = isActive(item.href);
+
+                        return (
+                            <Link
+                                key={item.name}
+                                href={item.href}
+                                className={`relative flex items-center gap-4 rounded-lg px-3 py-3 text-sm transition-all duration-200 ${
+                                    active
+                                        ? "bg-blue-50 font-semibold text-blue-700"
+                                        : "font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                                }`}
+                            >
+                                {/* Active Indicator */}
+                                {active && (
+                                    <span className="absolute left-0 top-2 h-[calc(100%-16px)] w-1 rounded-r-full bg-blue-600" />
+                                )}
+
+                                {/* Icon */}
+                                <Icon
+                                    size={20}
+                                    strokeWidth={active ? 2.2 : 1.8}
+                                    className={
+                                        active
+                                            ? "text-blue-600"
+                                            : "text-slate-500"
+                                    }
+                                />
+
+                                {/* Name */}
+                                <span>
+                                    {item.name}
+                                </span>
+
+                            </Link>
+                        );
+                    })}
+
+                </div>
 
             </nav>
 
-            {/* ==============================
+
+            {/* =====================================
                 BOTTOM NAVIGATION
-            ============================== */}
-            <div className="mt-auto border-t border-slate-200 pt-4">
+            ====================================== */}
+            <div className="border-t border-slate-200 px-4 pt-4">
 
-                {bottomItems.map((item) => {
-                    const Icon = item.icon;
+                <div className="space-y-1">
 
-                    const isActive =
-                        pathname === item.href;
+                    {bottomItems.map((item) => {
 
-                    return (
-                        <Link
-                            key={item.name}
-                            href={item.href}
-                            className={`flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left text-sm transition ${
-                                isActive
-                                    ? "bg-blue-50 font-semibold text-blue-700"
-                                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-                            }`}
-                        >
-                            <Icon size={18} />
+                        const Icon = item.icon;
+                        const active = isActive(item.href);
 
-                            <span>
-                                {item.name}
-                            </span>
-                        </Link>
-                    );
-                })}
+                        return (
+                            <Link
+                                key={item.name}
+                                href={item.href}
+                                className={`flex items-center gap-4 rounded-lg px-3 py-2.5 text-sm transition-all duration-200 ${
+                                    active
+                                        ? "bg-blue-50 font-semibold text-blue-700"
+                                        : "font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                                }`}
+                            >
+                                <Icon
+                                    size={19}
+                                    strokeWidth={active ? 2.2 : 1.8}
+                                    className={
+                                        active
+                                            ? "text-blue-600"
+                                            : "text-slate-500"
+                                    }
+                                />
+
+                                <span>
+                                    {item.name}
+                                </span>
+
+                            </Link>
+                        );
+                    })}
+
+                </div>
+
+
+                {/* =====================================
+                    HELP CARD
+                ====================================== */}
+                <div className="mb-5 mt-5 rounded-xl border border-blue-100 bg-gradient-to-br from-blue-50 to-white p-3.5">
+
+                    <div className="flex items-center gap-3">
+
+                        {/* Icon */}
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-600 shadow-sm">
+
+                            <Headphones
+                                size={18}
+                                className="text-white"
+                            />
+
+                        </div>
+
+                        {/* Text */}
+                        <div>
+                            <p className="text-xs font-bold text-slate-800">
+                                Need help?
+                            </p>
+
+                            <p className="mt-1 text-[11px] leading-4 text-slate-500">
+                                Talk to your Pilgora
+                                <br />
+                                trip planner
+                            </p>
+                        </div>
+
+                    </div>
+
+                </div>
 
             </div>
 

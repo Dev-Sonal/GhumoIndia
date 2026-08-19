@@ -99,7 +99,7 @@ export default function Sidebar() {
     };
 
     return (
-        <aside className="sticky top-0 flex h-screen w-64 shrink-0 flex-col border-r border-slate-200 bg-white">
+        <aside className="flex h-screen w-64 shrink-0 flex-col border-r border-slate-200 bg-white px-4 py-5">
 
             {/* =====================================
                 PILGORA BRAND

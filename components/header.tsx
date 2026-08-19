@@ -3,53 +3,81 @@ import {
     Edit3,
     Heart,
     MapPin,
+    Menu,
     Share2,
     Users,
     Wallet,
 } from "lucide-react";
 
-export default function Header() {
+type HeaderProps = {
+    onMenuClick?: () => void;
+};
+
+export default function Header({
+    onMenuClick,
+}: HeaderProps) {
     return (
-        <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur">
-            <div className="flex min-h-[88px] items-center justify-between gap-4 px-4 md:px-6 lg:px-8">
+        <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/95 backdrop-blur-xl">
 
-                {/* LEFT SIDE - TRIP INFORMATION */}
-                <div className="flex min-w-0 items-center gap-4">
+            <div className="flex min-h-[72px] items-center justify-between gap-3 px-3 sm:min-h-[76px] sm:px-4 md:px-6 lg:min-h-[82px] lg:px-8">
 
-                    {/* Trip Icon */}
-                    <div className="hidden h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600 sm:flex">
-                        <MapPin size={22} />
+                {/* ==============================
+                    LEFT SIDE
+                ============================== */}
+                <div className="flex min-w-0 items-center gap-3">
+
+                    {/* MOBILE MENU */}
+                    <button
+                        type="button"
+                        onClick={onMenuClick}
+                        aria-label="Open navigation"
+                        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50 active:scale-95 lg:hidden"
+                    >
+                        <Menu size={21} />
+                    </button>
+
+
+                    {/* DESKTOP TRIP ICON */}
+                    <div className="hidden h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-blue-100 bg-blue-50 text-blue-600 shadow-sm transition-transform duration-200 hover:scale-105 sm:flex lg:flex">
+                        <MapPin size={21} />
                     </div>
 
-                    {/* Trip Details */}
-                    <div className="min-w-0">
-                        <div className="flex items-center gap-2">
 
-                            <h2 className="truncate text-lg font-bold text-slate-800 sm:text-xl">
+                    {/* TRIP DETAILS */}
+                    <div className="min-w-0">
+
+                        <div className="flex items-center gap-1.5 sm:gap-2">
+
+                            <h2 className="truncate text-base font-bold tracking-tight text-slate-800 sm:text-lg lg:text-xl">
                                 Bengaluru
                             </h2>
 
-                            <span className="text-slate-400">→</span>
+                            <span className="text-slate-300">
+                                →
+                            </span>
 
-                            <h2 className="truncate text-lg font-bold text-blue-600 sm:text-xl">
+                            <h2 className="truncate text-base font-bold tracking-tight text-blue-600 sm:text-lg lg:text-xl">
                                 Goa
                             </h2>
 
                             <button
-                                className="ml-1 hidden rounded-md p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-blue-600 sm:block"
+                                className="ml-1 hidden rounded-lg p-1.5 text-slate-400 hover:bg-blue-50 hover:text-blue-600 sm:block"
                                 title="Edit Trip"
+                                aria-label="Edit Trip"
                             >
-                                <Edit3 size={16} />
+                                <Edit3 size={15} />
                             </button>
+
                         </div>
 
-                        {/* Trip Information */}
-                        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500 sm:text-sm">
 
-                            <span className="flex items-center gap-1">
-                                <span className="font-medium text-slate-700">
+                        {/* TRIP INFO */}
+                        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-slate-500 sm:text-xs md:text-sm">
+
+                            <span>
+                                <span className="font-semibold text-slate-700">
                                     4 Days
-                                </span>
+                                </span>{" "}
                                 Trip
                             </span>
 
@@ -57,17 +85,17 @@ export default function Header() {
                                 •
                             </span>
 
-                            <span className="flex items-center gap-1">
-                                <Users size={14} />
+                            <span className="hidden items-center gap-1 sm:flex">
+                                <Users size={13} />
                                 2 Adults
                             </span>
 
-                            <span className="hidden text-slate-300 sm:inline">
+                            <span className="hidden text-slate-300 md:inline">
                                 •
                             </span>
 
-                            <span className="flex items-center gap-1">
-                                <Wallet size={14} />
+                            <span className="hidden items-center gap-1 md:flex">
+                                <Wallet size={13} />
                                 Moderate Budget
                             </span>
 
@@ -78,60 +106,74 @@ export default function Header() {
                             <span className="hidden lg:inline">
                                 Couple
                             </span>
+
                         </div>
+
                     </div>
+
                 </div>
 
-                {/* RIGHT SIDE - ACTIONS */}
-                <div className="flex shrink-0 items-center gap-2 sm:gap-3">
 
-                    {/* Share */}
+                {/* ==============================
+                    RIGHT ACTIONS
+                ============================== */}
+                <div className="flex shrink-0 items-center gap-1.5 sm:gap-2 md:gap-3">
+
+                    {/* SHARE */}
                     <button
-                        className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-600 sm:px-4"
+                        className="flex h-9 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 text-sm font-medium text-slate-700 shadow-sm hover:border-blue-200 hover:bg-blue-50 hover:text-blue-600 active:scale-95 sm:h-10 sm:px-3 md:px-4"
+                        aria-label="Share Trip"
                     >
-                        <Share2 size={16} />
+                        <Share2 size={15} />
 
-                        <span className="hidden md:inline">
+                        <span className="hidden xl:inline">
                             Share Trip
                         </span>
                     </button>
 
-                    {/* Save */}
-                    <button
-                        className="flex items-center gap-2 rounded-lg border border-red-100 bg-red-50 px-3 py-2.5 text-sm font-medium text-red-500 transition hover:bg-red-100 sm:px-4"
-                    >
-                        <Heart size={16} />
 
-                        <span className="hidden md:inline">
+                    {/* SAVE */}
+                    <button
+                        className="flex h-9 items-center justify-center gap-2 rounded-lg border border-rose-100 bg-rose-50 px-2.5 text-sm font-medium text-rose-600 shadow-sm hover:bg-rose-100 active:scale-95 sm:h-10 sm:px-3 md:px-4"
+                        aria-label="Save Trip"
+                    >
+                        <Heart size={15} />
+
+                        <span className="hidden xl:inline">
                             Save Trip
                         </span>
                     </button>
 
-                    {/* Profile */}
-                    <button className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white p-1.5 transition hover:bg-slate-50">
 
-                        {/* Avatar */}
-                        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-800 text-sm font-semibold text-white">
+                    {/* PROFILE */}
+                    <button
+                        className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white p-1 shadow-sm hover:border-slate-300 hover:bg-slate-50"
+                        aria-label="Open Profile"
+                    >
+                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-slate-700 to-slate-900 text-[10px] font-bold text-white sm:h-9 sm:w-9 sm:text-xs">
                             SD
                         </div>
 
-                        <div className="hidden text-left lg:block">
+                        <div className="hidden text-left xl:block">
                             <p className="text-xs font-semibold text-slate-800">
                                 Sonal Dev
                             </p>
 
-                            <p className="text-[11px] text-slate-500">
+                            <p className="text-[10px] text-slate-500">
                                 My Account
                             </p>
                         </div>
 
                         <ChevronDown
-                            size={16}
-                            className="mr-1 hidden text-slate-400 lg:block"
+                            size={15}
+                            className="mr-1 hidden text-slate-400 xl:block"
                         />
                     </button>
+
                 </div>
+
             </div>
+
         </header>
     );
 }

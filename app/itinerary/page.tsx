@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { defaultTripDetails, getTripDetails } from "@/lib/trip-details";
 
 import AppShell from "@/components/app-shell";
 
@@ -25,17 +26,11 @@ export default function ItineraryPage() {
     // Controls which day's details are expanded
     // ==========================================
     const [selectedDay, setSelectedDay] = useState(1);
+    const [tripDetails, setTripDetails] = useState(defaultTripDetails);
 
-    // ==========================================
-    // TRIP DATA
-    // Same trip as the Trip Dashboard
-    // ==========================================
-    const tripDetails = {
-        destination: "Goa",
-        duration: "4 Days",
-        budget: "₹11,000",
-        travelStyle: "Recommended",
-    };
+    useEffect(() => {
+        setTripDetails(getTripDetails());
+    }, []);
 
     // ==========================================
     // 4-DAY GOA ITINERARY
@@ -222,10 +217,21 @@ export default function ItineraryPage() {
     // ==========================================
     // CURRENT SELECTED DAY DATA
     // ==========================================
+    const requestedDays = Number.parseInt(tripDetails.duration, 10) || 4;
+    // The current destination-specific sample data contains four Goa days.
+    // Show only the requested number of days when it is within that dataset.
+    const displayedItineraryDays = itineraryDays.slice(
+        0,
+        Math.min(requestedDays, itineraryDays.length),
+    );
+
     const currentDay =
-        itineraryDays.find(
-            (item) => item.day === selectedDay
-        ) || itineraryDays[0];
+        displayedItineraryDays.find((item) => item.day === selectedDay) ||
+        displayedItineraryDays[0] ||
+        itineraryDays[0];
+
+    const isGoaDestination = tripDetails.destination.trim().toLowerCase() === "goa";
+    const durationNeedsMoreData = requestedDays > itineraryDays.length;
 
     return (
         <AppShell>
@@ -245,7 +251,7 @@ export default function ItineraryPage() {
                                 />
 
                                 <h1 className="text-2xl font-bold text-slate-800 md:text-3xl">
-                                    Your Goa Itinerary
+                                    Your {tripDetails.destination} Itinerary
                                 </h1>
                             </div>
 
@@ -274,7 +280,7 @@ export default function ItineraryPage() {
                                 </p>
 
                                 <p className="text-sm font-semibold text-slate-800">
-                                    {tripDetails.travelStyle}
+                                    {tripDetails.tripType}
                                 </p>
                             </div>
 
@@ -291,6 +297,18 @@ export default function ItineraryPage() {
                         </div>
                     </div>
 
+                    {!isGoaDestination && (
+                        <div role="status" className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">
+                            Your selected destination is <strong>{tripDetails.destination}</strong>, but detailed itinerary data is currently available only for Goa. The activities below are Goa demo content and should not be treated as recommendations for your destination.
+                        </div>
+                    )}
+
+                    {durationNeedsMoreData && isGoaDestination && (
+                        <div role="status" className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">
+                            Your trip is {tripDetails.duration}, but the current Goa sample itinerary contains four days. The additional days will appear once more itinerary data is added.
+                        </div>
+                    )}
+
                     {/* ==============================
                         DAY SELECTOR
                     ============================== */}
@@ -298,7 +316,7 @@ export default function ItineraryPage() {
 
                         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
 
-                            {itineraryDays.map((item) => {
+                            {displayedItineraryDays.map((item) => {
 
                                 const Icon = item.icon;
 
@@ -510,12 +528,12 @@ export default function ItineraryPage() {
                         </h2>
 
                         <p className="mt-1 text-sm text-slate-500">
-                            See how your 4 days in Goa are planned.
+                            See how your selected {tripDetails.duration.toLowerCase()} trip is planned.
                         </p>
 
                         <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
 
-                            {itineraryDays.map((item) => {
+                            {displayedItineraryDays.map((item) => {
 
                                 const Icon = item.icon;
 
@@ -602,10 +620,9 @@ export default function ItineraryPage() {
                             </h3>
 
                             <p className="mt-1 text-sm leading-6 text-amber-800">
-                                This plan is based on your Recommended travel style,
-                                4-day duration and estimated ₹11,000 per-person budget.
-                                You can later customize places, activities and timing
-                                according to your actual travel dates.
+                                This sample itinerary uses your saved destination, duration, traveller preferences and budget selection.
+                                Activity costs are illustrative estimates, not live prices. You can customize
+                                places, activities and timing according to your actual travel dates.
                             </p>
                         </div>
                     </div>

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { defaultTripDetails, getTripDetails, saveTripDetails } from "@/lib/trip-details";
 
 
 import {
@@ -46,8 +47,73 @@ export default function Dashboard() {
     // STATES
     // =========================================================
 
+    const [tripDetails, setTripDetails] = useState(defaultTripDetails);
+    const destinationKey = tripDetails.destination.trim().toLowerCase();
+    const isGoa = destinationKey === "goa";
+    const isRanchi = destinationKey === "ranchi";
+    const hasDestinationData = isGoa || isRanchi;
     const [selectedStyle, setSelectedStyle] = useState("Recommended");
-    const [selectedDuration, setSelectedDuration] = useState("4 Days");
+    const [selectedDuration, setSelectedDuration] = useState(defaultTripDetails.duration);
+
+    const applySavedTripDetails = () => {
+        const savedTrip = getTripDetails();
+        setTripDetails(savedTrip);
+        setSelectedDuration(savedTrip.duration);
+        setSelectedStyle(
+            savedTrip.budget === "Budget"
+                ? "Cheapest"
+                : savedTrip.budget === "Comfortable Budget" || savedTrip.budget === "Luxury Budget"
+                    ? "Comfortable"
+                    : "Recommended",
+        );
+    };
+
+    useEffect(() => {
+        applySavedTripDetails();
+
+        // Refresh when trip details are edited elsewhere in Pilgora.
+        const handleTripDetailsUpdated = () => applySavedTripDetails();
+        const handleStorage = (event: StorageEvent) => {
+            if (event.key === "pilgora-trip-details") applySavedTripDetails();
+        };
+
+        window.addEventListener("pilgora-trip-details-updated", handleTripDetailsUpdated);
+        window.addEventListener("storage", handleStorage);
+        window.addEventListener("focus", handleTripDetailsUpdated);
+
+        return () => {
+            window.removeEventListener("pilgora-trip-details-updated", handleTripDetailsUpdated);
+            window.removeEventListener("storage", handleStorage);
+            window.removeEventListener("focus", handleTripDetailsUpdated);
+        };
+    }, []);
+
+    const updateSelectedDuration = (duration: string) => {
+        setSelectedDuration(duration);
+        const updatedTrip = { ...tripDetails, duration };
+        setTripDetails(updatedTrip);
+        try {
+            saveTripDetails(updatedTrip);
+        } catch (error) {
+            console.error("Unable to save selected trip duration:", error);
+        }
+    };
+
+    const updateSelectedStyle = (style: string) => {
+        setSelectedStyle(style);
+        const budget = style === "Cheapest"
+            ? "Budget"
+            : style === "Comfortable"
+                ? "Comfortable Budget"
+                : "Moderate Budget";
+        const updatedTrip = { ...tripDetails, budget };
+        setTripDetails(updatedTrip);
+        try {
+            saveTripDetails(updatedTrip);
+        } catch (error) {
+            console.error("Unable to save selected trip budget:", error);
+        }
+    };
 
     const [showFullBreakdown, setShowFullBreakdown] = useState(false);
     const [showAllPlaces, setShowAllPlaces] = useState(false);
@@ -123,325 +189,168 @@ export default function Dashboard() {
     // =========================================================
 
     const tripDurations = [
-        {
-            days: "3 Days",
-            baseCost: 8000,
-            description: "Quick trip - Cover highlights",
-            recommended: false,
-        },
-        {
-            days: "4 Days",
-            baseCost: 11000,
-            description: "Perfect balance",
-            recommended: true,
-        },
-        {
-            days: "6 Days",
-            baseCost: 14500,
-            description: "Explore more & nearby places",
-            recommended: false,
-        },
+        { days: "2 Days", baseCost: isRanchi ? 4200 : 6000, description: "Short getaway", recommended: false },
+        { days: "3 Days", baseCost: isRanchi ? 5600 : 8000, description: "Quick trip - cover highlights", recommended: false },
+        { days: "4 Days", baseCost: isRanchi ? 7600 : 11000, description: "Perfect balance", recommended: true },
+        { days: "5 Days", baseCost: isRanchi ? 9300 : 13500, description: "More time to explore", recommended: false },
+        { days: "7 Days", baseCost: isRanchi ? 12500 : 18000, description: "A relaxed week-long trip", recommended: false },
     ];
 
     // =========================================================
     // BEST TIME DATA
     // =========================================================
 
-    const bestTimes = [
-        {
-            title: "Best Experience",
-            months: "Nov - Feb",
-            description: "Great weather, more activities",
-            icon: Sun,
-            iconClass: "text-yellow-500",
-            monthClass: "text-green-700",
-        },
-        {
-            title: "Best Value",
-            months: "Mar - May",
-            description: "Good weather, less crowd",
-            icon: CloudSun,
-            iconClass: "text-green-500",
-            monthClass: "text-green-600",
-        },
-        {
-            title: "Cheapest Time",
-            months: "Jun - Sep",
-            description: "Lowest prices, off-season",
-            icon: CloudRain,
-            iconClass: "text-red-500",
-            monthClass: "text-red-500",
-        },
-    ];
+    const bestTimes = isRanchi
+        ? [
+            { title: "Best Experience", months: "Oct - Mar", description: "Generally pleasant weather for sightseeing", icon: Sun, iconClass: "text-yellow-500", monthClass: "text-green-700" },
+            { title: "Best Value", months: "Sep - Mar", description: "Compare weekdays and local transport", icon: CloudSun, iconClass: "text-green-500", monthClass: "text-green-600" },
+            { title: "Rainy Season", months: "Jun - Sep", description: "Waterfalls are fuller; check local conditions", icon: CloudRain, iconClass: "text-red-500", monthClass: "text-red-500" },
+        ]
+        : isGoa ? [
+            { title: "Best Experience", months: "Nov - Feb", description: "Popular season for outdoor activities", icon: Sun, iconClass: "text-yellow-500", monthClass: "text-green-700" },
+            { title: "Best Value", months: "Mar - May", description: "Compare weather and accommodation rates", icon: CloudSun, iconClass: "text-green-500", monthClass: "text-green-600" },
+            { title: "Cheapest Time", months: "Jun - Sep", description: "Monsoon season; check activity availability", icon: CloudRain, iconClass: "text-red-500", monthClass: "text-red-500" },
+        ] : [];
 
-    // =========================================================
+        // =========================================================
     // TRIP HIGHLIGHTS
     // =========================================================
 
-    const tripHighlights = [
-        {
-            title: "Beaches, Nightlife & Water Activities",
-            icon: Palmtree,
-        },
-        {
-            title: "Delicious Goan Food & Cafes",
-            icon: Utensils,
-        },
-        {
-            title: "Portuguese Heritage & Culture",
-            icon: Landmark,
-        },
-        {
-            title: "Scenic Views & Sunsets",
-            icon: Camera,
-        },
-        {
-            title: "Shopping & Local Markets",
-            icon: ShoppingBag,
-        },
-    ];
+    const tripHighlights = isRanchi
+        ? [
+            { title: "Waterfalls and forest scenery", icon: Palmtree },
+            { title: "Local Jharkhand cuisine", icon: Utensils },
+            { title: "Temples and cultural landmarks", icon: Landmark },
+            { title: "Rock Garden and scenic viewpoints", icon: Camera },
+            { title: "Local markets and handicrafts", icon: ShoppingBag },
+        ]
+        : isGoa ? [
+            { title: "Beaches, nightlife and water activities", icon: Palmtree },
+            { title: "Goan food and cafes", icon: Utensils },
+            { title: "Portuguese heritage and culture", icon: Landmark },
+            { title: "Scenic views and sunsets", icon: Camera },
+            { title: "Shopping and local markets", icon: ShoppingBag },
+        ] : [];
 
-    // =========================================================
+        // =========================================================
     // TOP PLACES
     // =========================================================
 
-    const topPlaces = [
-        {
-            name: "Baga Beach",
-            duration: "3-4 hrs",
-            image: "/images/baga-beach.jpg",
-        },
-        {
-            name: "Fort Aguada",
-            duration: "1-2 hrs",
-            image: "/images/fort-aguada.jpg",
-        },
-        {
-            name: "Dudhsagar Falls",
-            duration: "1 day",
-            image: "/images/dudhsagar-falls.jpg",
-        },
-        {
-            name: "Anjuna Beach",
-            duration: "2-3 hrs",
-            image: "/images/anjuna-beach.jpg",
-        },
-    ];
+    const topPlaces = isRanchi
+        ? [
+            { name: "Hundru Falls", duration: "Half day", image: "" },
+            { name: "Dassam Falls", duration: "Half day", image: "" },
+            { name: "Rock Garden", duration: "1-2 hrs", image: "" },
+            { name: "Jagannath Temple", duration: "1-2 hrs", image: "" },
+        ]
+        : isGoa ? [
+            { name: "Baga Beach", duration: "3-4 hrs", image: "/images/baga-beach.jpg" },
+            { name: "Fort Aguada", duration: "1-2 hrs", image: "/images/fort-aguada.jpg" },
+            { name: "Dudhsagar Falls", duration: "1 day", image: "/images/dudhsagar-falls.jpg" },
+            { name: "Anjuna Beach", duration: "2-3 hrs", image: "/images/anjuna-beach.jpg" },
+        ] : [];
 
-    const extraPlaces = [
-        {
-            name: "Chapora Fort",
-            duration: "1-2 hrs",
-            image: "/images/fort-aguada.jpg",
-        },
-        {
-            name: "Candolim Beach",
-            duration: "2-3 hrs",
-            image: "/images/baga-beach.jpg",
-        },
-        {
-            name: "Old Goa Churches",
-            duration: "2-3 hrs",
-            image: "/images/anjuna-beach.jpg",
-        },
-    ];
+    const extraPlaces = isRanchi
+        ? [
+            { name: "Tagore Hill", duration: "1-2 hrs", image: "" },
+            { name: "Pahari Mandir", duration: "1-2 hrs", image: "" },
+            { name: "Birsa Zoological Park", duration: "Half day", image: "" },
+        ]
+        : isGoa ? [
+            { name: "Chapora Fort", duration: "1-2 hrs", image: "/images/fort-aguada.jpg" },
+            { name: "Candolim Beach", duration: "2-3 hrs", image: "/images/baga-beach.jpg" },
+            { name: "Old Goa Churches", duration: "2-3 hrs", image: "/images/anjuna-beach.jpg" },
+        ] : [];
 
-    // =========================================================
+        // =========================================================
     // NEARBY PLACES
     // =========================================================
 
-    const nearbyPlaces = [
-        {
-            name: "Dudhsagar Falls",
-            distance: "45 km",
-            duration: "1.5 hrs",
-            recommendation: "Worth adding",
-            image: "/images/dudhsagar-falls.jpg",
-            icon: MapPin,
-        },
-        {
-            name: "Old Goa Churches",
-            distance: "15 km",
-            duration: "40 mins",
-            recommendation: "Worth adding",
-            image: "/images/anjuna-beach.jpg",
-            icon: Church,
-        },
-        {
-            name: "Divar Island",
-            distance: "32 km",
-            duration: "1 hr",
-            recommendation: "Good for half day",
-            image: "/images/baga-beach.jpg",
-            icon: ShipWheel,
-        },
-        {
-            name: "Arambol Beach",
-            distance: "38 km",
-            duration: "1.5 hrs",
-            recommendation: "Worth adding",
-            image: "/images/anjuna-beach.jpg",
-            icon: Palmtree,
-        },
-        {
-            name: "Salim Ali Bird Sanctuary",
-            distance: "28 km",
-            duration: "50 mins",
-            recommendation: "Nature lovers",
-            image: "/images/dudhsagar-falls.jpg",
-            icon: Map,
-        },
-    ];
+    const nearbyPlaces = isRanchi
+        ? [
+            { name: "Hundru Falls", distance: "Approx. 45 km", duration: "Check route", recommendation: "Nature", image: "", icon: MapPin },
+            { name: "Dassam Falls", distance: "Approx. 40 km", duration: "Check route", recommendation: "Nature", image: "", icon: MapPin },
+            { name: "Rock Garden", distance: "Ranchi city", duration: "Local visit", recommendation: "Sightseeing", image: "", icon: Map },
+            { name: "Jagannath Temple", distance: "Ranchi city", duration: "Local visit", recommendation: "Culture", image: "", icon: Church },
+            { name: "Tagore Hill", distance: "Ranchi city", duration: "Local visit", recommendation: "Viewpoint", image: "", icon: MapPin },
+        ]
+        : isGoa ? [
+            { name: "Dudhsagar Falls", distance: "45 km", duration: "1.5 hrs", recommendation: "Worth adding", image: "/images/dudhsagar-falls.jpg", icon: MapPin },
+            { name: "Old Goa Churches", distance: "15 km", duration: "40 mins", recommendation: "Worth adding", image: "/images/anjuna-beach.jpg", icon: Church },
+            { name: "Divar Island", distance: "32 km", duration: "1 hr", recommendation: "Good for half day", image: "/images/baga-beach.jpg", icon: ShipWheel },
+            { name: "Arambol Beach", distance: "38 km", duration: "1.5 hrs", recommendation: "Worth adding", image: "/images/anjuna-beach.jpg", icon: Palmtree },
+            { name: "Salim Ali Bird Sanctuary", distance: "28 km", duration: "50 mins", recommendation: "Nature lovers", image: "/images/dudhsagar-falls.jpg", icon: Map },
+        ] : [];
 
-    // =========================================================
+        // =========================================================
     // DAY-WISE ITINERARY
     // =========================================================
 
-    const itinerary = [
-        {
-            day: "Day 1",
-            title: "Arrival + North Goa",
-            short: "Candolim Beach, Fort Aguada, Sunset",
-            details: [
-                "Check-in and freshen up",
-                "Visit Candolim Beach",
-                "Explore Fort Aguada",
-                "Sunset by the beach",
-                "Dinner and optional nightlife",
-            ],
-        },
-        {
-            day: "Day 2",
-            title: "Beaches & Activities",
-            short: "Water activities, Baga Beach, Anjuna",
-            details: [
-                "Breakfast near your stay",
-                "Water activities at Baga Beach",
-                "Relax at Calangute Beach",
-                "Visit Anjuna Beach",
-                "Explore cafes and nightlife",
-            ],
-        },
-        {
-            day: "Day 3",
-            title: "Explore & Local Experience",
-            short: "Local markets, churches, food tour",
-            details: [
-                "Visit Old Goa Churches",
-                "Explore local markets",
-                "Try authentic Goan food",
-                "Visit Panaji streets",
-                "Enjoy a relaxed evening",
-            ],
-        },
-        {
-            day: "Day 4",
-            title: "Departure",
-            short: "Breakfast, check-out, return journey",
-            details: [
-                "Breakfast",
-                "Last-minute shopping",
-                "Check-out from hotel",
-                "Travel to airport or station",
-            ],
-        },
-    ];
+    const itinerary = isRanchi
+        ? [
+            { day: "Day 1", title: "Ranchi city", short: "Rock Garden, Tagore Hill and local food", details: ["Start with Rock Garden", "Visit Tagore Hill if time and access allow", "Explore a local market", "Try local Jharkhand cuisine"] },
+            { day: "Day 2", title: "Waterfalls and departure", short: "Choose a waterfall based on travel time", details: ["Start early for Hundru Falls or Dassam Falls", "Check weather, access and transport before leaving", "Return to Ranchi", "Depart for your return journey"] },
+            { day: "Day 3", title: "Temples and local culture", short: "Jagannath Temple and city sights", details: ["Check access details for Jagannath Temple", "Explore local food options", "Keep time for travel between locations", "Enjoy a relaxed evening"] },
+            { day: "Day 4", title: "Departure or extra sightseeing", short: "Flexible day", details: ["Breakfast", "Optional city sightseeing", "Check out", "Travel to your station or airport"] },
+        ]
+        : isGoa ? [
+            { day: "Day 1", title: "Arrival + North Goa", short: "Candolim Beach, Fort Aguada, Sunset", details: ["Check-in and freshen up", "Visit Candolim Beach", "Explore Fort Aguada", "Sunset by the beach", "Dinner and optional nightlife"] },
+            { day: "Day 2", title: "Beaches & Activities", short: "Water activities, Baga Beach, Anjuna", details: ["Breakfast near your stay", "Water activities at Baga Beach", "Relax at Calangute Beach", "Visit Anjuna Beach", "Explore cafes and nightlife"] },
+            { day: "Day 3", title: "Explore & Local Experience", short: "Local markets, churches, food tour", details: ["Visit Old Goa Churches", "Explore local markets", "Try authentic Goan food", "Visit Panaji streets", "Enjoy a relaxed evening"] },
+            { day: "Day 4", title: "Departure", short: "Breakfast, check-out, return journey", details: ["Breakfast", "Last-minute shopping", "Check-out from hotel", "Travel to airport or station"] },
+        ] : [];
 
-    // =========================================================
+        // =========================================================
     // TRANSPORT OPTIONS
     // =========================================================
 
-    const transportOptions = [
-        {
-            title: "Cheapest",
-            subtitle: "Bus / Train",
-            price: "₹1,200 - 1,800",
-            duration: "12 - 14 hrs",
-            icon: Bus,
-            recommended: false,
-        },
-        {
-            title: "Best Balance",
-            subtitle: "Train + Local Cab",
-            price: "₹2,800 - 3,500",
-            duration: "10 - 12 hrs",
-            icon: Train,
-            recommended: true,
-        },
-        {
-            title: "Fastest",
-            subtitle: "Flight",
-            price: "₹4,500 - 6,000",
-            duration: "1.5 - 2 hrs",
-            icon: Plane,
-            recommended: false,
-        },
-    ];
+    const transportOptions = isRanchi
+        ? [
+            { title: "Cheapest", subtitle: "Train / Bus", price: "Check current fares", duration: "Depends on origin", icon: Bus, recommended: false },
+            { title: "Best Balance", subtitle: "Train + local transport", price: "Estimate only", duration: "Check route", icon: Train, recommended: true },
+            { title: "Fastest", subtitle: "Flight where available", price: "Check current fares", duration: "Route-dependent", icon: Plane, recommended: false },
+        ]
+        : isGoa ? [
+            { title: "Cheapest", subtitle: "Bus / Train", price: "₹1,200 - 1,800", duration: "12 - 14 hrs", icon: Bus, recommended: false },
+            { title: "Best Balance", subtitle: "Train + Local Cab", price: "₹2,800 - 3,500", duration: "10 - 12 hrs", icon: Train, recommended: true },
+            { title: "Fastest", subtitle: "Flight", price: "₹4,500 - 6,000", duration: "1.5 - 2 hrs", icon: Plane, recommended: false },
+        ] : [];
 
-    // =========================================================
+        // =========================================================
     // STAY AREAS
     // =========================================================
 
-    const stayAreas = [
-        {
-            name: "Baga / Calangute",
-            description: "Best for nightlife & friends",
-            price: "₹2,500 - 4,000 / night",
-            image: "/images/baga-beach.jpg",
-            recommended: false,
-        },
-        {
-            name: "Candolim",
-            description: "Best for couples & families",
-            price: "₹2,000 - 3,500 / night",
-            image: "/images/fort-aguada.jpg",
-            recommended: true,
-        },
-        {
-            name: "Panaji",
-            description: "Quiet, cultural & convenient",
-            price: "₹1,800 - 3,000 / night",
-            image: "/images/anjuna-beach.jpg",
-            recommended: false,
-        },
-    ];
+    const stayAreas = isRanchi
+        ? [
+            { name: "Ranchi city centre", description: "Convenient for city sights and food", price: "Compare current hotel rates", image: "", recommended: true },
+            { name: "Near railway station", description: "Useful for short trips and transit", price: "Compare current hotel rates", image: "", recommended: false },
+            { name: "Near airport access", description: "Consider based on your arrival time", price: "Compare current hotel rates", image: "", recommended: false },
+        ]
+        : isGoa ? [
+            { name: "Baga / Calangute", description: "Best for nightlife & friends", price: "₹2,500 - 4,000 / night", image: "/images/baga-beach.jpg", recommended: false },
+            { name: "Candolim", description: "Best for couples & families", price: "₹2,000 - 3,500 / night", image: "/images/fort-aguada.jpg", recommended: true },
+            { name: "Panaji", description: "Quiet, cultural & convenient", price: "₹1,800 - 3,000 / night", image: "/images/anjuna-beach.jpg", recommended: false },
+        ] : [];
 
-    // =========================================================
+        // =========================================================
     // FOOD DATA
     // =========================================================
 
-    const foodItems = [
-        "Goan Fish Curry",
-        "Prawn Balchao",
-        "Bebinca",
-        "Goan Sausage",
-    ];
+    const foodItems = isRanchi
+        ? ["Dhuska", "Thekua", "Rugra (seasonal)", "Local Jharkhand cuisine"]
+        : isGoa
+            ? ["Goan Fish Curry", "Prawn Balchao", "Bebinca", "Goan Sausage"]
+            : [];
 
-    // =========================================================
+        // =========================================================
     // MONEY SAVING TIPS
     // =========================================================
 
     const savingTips = [
-        {
-            title: "Travel in shoulder season",
-            description: "Save up to 30%",
-            icon: CalendarCheck,
-        },
-        {
-            title: "Book stays in advance",
-            description: "Better deals available",
-            icon: Hotel,
-        },
-        {
-            title: "Use local transport",
-            description: "Rent scooter / bike",
-            icon: Bike,
-        },
-        {
-            title: "Eat at local eateries",
-            description: "Save on food cost",
-            icon: Soup,
-        },
+        { title: "Compare travel dates", description: "Check weekday and seasonal rates", icon: CalendarCheck },
+        { title: "Compare stays early", description: "Review location and cancellation rules", icon: Hotel },
+        { title: "Plan local transport", description: "Compare public transport and local cabs", icon: Bike },
+        { title: "Try local eateries", description: "Set a daily food budget", icon: Soup },
     ];
 
     // =========================================================
@@ -454,21 +363,35 @@ export default function Dashboard() {
         ) || tripOptions[1];
 
     const selectedDurationData =
-        tripDurations.find(
-            (duration) =>
-                duration.days === selectedDuration
-        ) || tripDurations[1];
+        tripDurations.find((duration) => duration.days === selectedDuration) ||
+        tripDurations[0];
 
+    // Always provide a safe value: unsupported destinations currently have
+    // no destination-specific transport or stay options.
     const selectedTransportData =
         transportOptions.find(
-            (transport) =>
-                transport.title === selectedTransport
-        ) || transportOptions[1];
+            (transport) => transport.title === selectedTransport
+        ) ??
+        transportOptions.find((transport) => transport.recommended) ??
+        transportOptions[0] ?? {
+            title: "Not available",
+            subtitle: "Route-specific transport data is not available yet",
+            price: "Check current fares",
+            duration: "Check your route",
+            icon: Train,
+            recommended: false,
+        };
 
     const selectedStayData =
-        stayAreas.find(
-            (stay) => stay.name === selectedStay
-        ) || stayAreas[1];
+        stayAreas.find((stay) => stay.name === selectedStay) ??
+        stayAreas.find((stay) => stay.recommended) ??
+        stayAreas[0] ?? {
+            name: "Stay information unavailable",
+            description: `Compare accommodation options in ${tripDetails.destination}.`,
+            price: "Check current hotel rates",
+            image: "",
+            recommended: false,
+        };
 
     // =========================================================
     // DYNAMIC BUDGET
@@ -552,13 +475,11 @@ export default function Dashboard() {
                     ================================================= */}
                     <div className="relative h-[430px] overflow-hidden rounded-2xl shadow-sm sm:h-[300px]">
 
-                        <Image
-                            src="/images/goa.jpg"
-                            alt="Beautiful Goa beach"
-                            fill
-                            priority
-                            className="object-cover"
-                        />
+                        {isGoa ? (
+                            <Image src="/images/goa.jpg" alt="Goa beach" fill priority className="object-cover" />
+                        ) : (
+                            <div className="absolute inset-0 bg-gradient-to-br from-emerald-900 via-teal-800 to-slate-900" aria-hidden="true" />
+                        )}
 
                         <div className="absolute inset-0 bg-gradient-to-r from-slate-950/70 via-slate-900/40 to-transparent" />
 
@@ -566,13 +487,25 @@ export default function Dashboard() {
 
                             <div className="max-w-xl">
                                 <h1 className="text-2xl font-bold text-white sm:text-3xl">
-                                    Your Goa Trip is Ready! 🌴
+                                    Your {tripDetails.destination} Trip is Ready! {isGoa ? "🌴" : isRanchi ? "🌿" : "🧭"}
                                 </h1>
 
                                 <p className="mt-2 text-sm text-slate-100 sm:text-base">
-                                    We&apos;ve created the best plan for you with the
-                                    perfect balance of experience and budget.
+                                    {tripDetails.origin} to {tripDetails.destination} · {tripDetails.travellers} · {tripDetails.budget}.
+                                    {hasDestinationData
+                                        ? " Destination recommendations and prices are demo estimates."
+                                        : " Destination-specific recommendations are not available yet."}
                                 </p>
+                                {!hasDestinationData && (
+                                    <p className="mt-2 rounded-lg bg-amber-100/95 px-3 py-2 text-xs font-medium text-amber-950">
+                                        Pilgora does not yet have verified places, seasons, transport or stay data for {tripDetails.destination}. Avoid relying on the displayed generic budget estimate for booking decisions.
+                                    </p>
+                                )}
+                                {hasDestinationData && (
+                                    <p className="mt-2 inline-block rounded-lg bg-amber-100/95 px-3 py-2 text-xs font-medium text-amber-950">
+                                        Planning data and costs are illustrative estimates, not live prices or bookings.
+                                    </p>
+                                )}
                             </div>
 
                             {/* SUMMARY */}
@@ -603,7 +536,7 @@ export default function Dashboard() {
 
                                     <div>
                                         <p className="text-[10px] uppercase text-slate-500">
-                                            Estimated Cost
+                                            Estimated Cost / Person
                                         </p>
 
                                         <p className="font-bold text-slate-800">
@@ -624,7 +557,7 @@ export default function Dashboard() {
                                         </p>
 
                                         <p className="font-bold text-slate-800">
-                                            Nov - Feb
+                                            {isRanchi ? "Oct - Mar" : isGoa ? "Nov - Feb" : "Not available"}
                                         </p>
                                     </div>
                                 </div>
@@ -690,7 +623,7 @@ export default function Dashboard() {
 
                                     <button
                                         onClick={() =>
-                                            setSelectedStyle(option.title)
+                                            updateSelectedStyle(option.title)
                                         }
                                         className={`mt-4 flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition ${
                                             isSelected
@@ -726,6 +659,11 @@ export default function Dashboard() {
                         </h2>
 
                         <div className="mt-3">
+                            {bestTimes.length === 0 && (
+                                <p className="py-3 text-xs text-slate-500">
+                                    Seasonal guidance for {tripDetails.destination} has not been added yet.
+                                </p>
+                            )}
                             {bestTimes.map((time, index) => {
                                 const Icon = time.icon;
 
@@ -775,6 +713,11 @@ export default function Dashboard() {
                         </h2>
 
                         <div className="mt-3">
+                            {tripHighlights.length === 0 && (
+                                <p className="py-3 text-xs text-slate-500">
+                                    Destination highlights for {tripDetails.destination} are not available yet.
+                                </p>
+                            )}
                             {tripHighlights.map(
                                 (highlight, index) => {
                                     const Icon = highlight.icon;
@@ -860,7 +803,7 @@ export default function Dashboard() {
 
                     <div className="mt-4 flex justify-between border-t border-slate-200 pt-4">
                         <span className="text-sm font-bold text-slate-800">
-                            Total (Per Person)
+                            Estimated Total (Per Person)
                         </span>
 
                         <span className="text-lg font-bold text-slate-800">
@@ -912,7 +855,7 @@ export default function Dashboard() {
                                 <button
                                     key={duration.days}
                                     onClick={() =>
-                                        setSelectedDuration(duration.days)
+                                        updateSelectedDuration(duration.days)
                                     }
                                     className={`w-full rounded-lg border p-3 text-left transition ${
                                         isSelected
@@ -961,7 +904,7 @@ export default function Dashboard() {
 
                         <button
                             onClick={() =>
-                                setSelectedDuration("4 Days")
+                                updateSelectedDuration("4 Days")
                             }
                             className="flex w-full items-center justify-between rounded-lg border border-slate-200 p-3 text-left hover:bg-slate-50"
                         >
@@ -998,19 +941,19 @@ export default function Dashboard() {
                     </div>
 
                     <div className="mt-4 space-y-3">
+                        {displayedPlaces.length === 0 && (
+                            <p className="text-xs text-slate-500">
+                                Place recommendations for {tripDetails.destination} are not available yet.
+                            </p>
+                        )}
                         {displayedPlaces.map((place) => (
                             <Link
                                 href="/places"
                                 key={place.name}
                                 className="flex w-full items-center gap-3 text-left"
                             >
-                                <div className="relative h-10 w-14 shrink-0 overflow-hidden rounded-md">
-                                    <Image
-                                        src={place.image}
-                                        alt={place.name}
-                                        fill
-                                        className="object-cover"
-                                    />
+                                <div className="relative flex h-10 w-14 shrink-0 items-center justify-center overflow-hidden rounded-md bg-emerald-50 text-emerald-700">
+                                    {place.image ? <Image src={place.image} alt={place.name} fill className="object-cover" /> : <MapPin size={18} aria-hidden="true" />}
                                 </div>
 
                                 <p className="flex-1 text-sm font-medium text-slate-800">
@@ -1064,18 +1007,18 @@ export default function Dashboard() {
                     </p>
 
                     <div className="mt-3 space-y-3">
+                        {displayedNearbyPlaces.length === 0 && (
+                            <p className="text-xs text-slate-500">
+                                Nearby-place data for {tripDetails.destination} is not available yet.
+                            </p>
+                        )}
                         {displayedNearbyPlaces.map((place) => (
                             <div
                                 key={place.name}
                                 className="flex items-center gap-3"
                             >
-                                <div className="relative h-9 w-12 shrink-0 overflow-hidden rounded-md">
-                                    <Image
-                                        src={place.image}
-                                        alt={place.name}
-                                        fill
-                                        className="object-cover"
-                                    />
+                                <div className="relative flex h-9 w-12 shrink-0 items-center justify-center overflow-hidden rounded-md bg-emerald-50 text-emerald-700">
+                                    {place.image ? <Image src={place.image} alt={place.name} fill className="object-cover" /> : <MapPin size={16} aria-hidden="true" />}
                                 </div>
 
                                 <div className="min-w-0 flex-1">
@@ -1137,7 +1080,7 @@ export default function Dashboard() {
                     </div>
 
                     <div className="mt-4 space-y-2">
-                        {itinerary.map((item, index) => {
+                        {itinerary.slice(0, Math.max(1, Number.parseInt(selectedDuration, 10) || 2)).map((item, index) => {
                             const isOpen = openDay === index;
 
                             return (
@@ -1228,6 +1171,11 @@ export default function Dashboard() {
                     </div>
 
                     <div className="mt-4 space-y-3">
+                        {transportOptions.length === 0 && (
+                            <p className="text-xs text-slate-500">
+                                Compare current train, bus and flight options for {tripDetails.origin} to {tripDetails.destination}. Route-specific estimates are not available yet.
+                            </p>
+                        )}
                         {transportOptions.map((option) => {
                             const Icon = option.icon;
 
@@ -1305,6 +1253,11 @@ export default function Dashboard() {
                     </div>
 
                     <div className="mt-4 space-y-3">
+                        {stayAreas.length === 0 && (
+                            <p className="text-xs text-slate-500">
+                                Stay-area recommendations for {tripDetails.destination} are not available yet. Compare current accommodation listings before booking.
+                            </p>
+                        )}
                         {stayAreas.map((area) => {
                             const isSelected =
                                 selectedStay === area.name;
@@ -1321,13 +1274,8 @@ export default function Dashboard() {
                                             : "border-slate-200 hover:bg-slate-50"
                                     }`}
                                 >
-                                    <div className="relative h-12 w-16 shrink-0 overflow-hidden rounded-md">
-                                        <Image
-                                            src={area.image}
-                                            alt={area.name}
-                                            fill
-                                            className="object-cover"
-                                        />
+                                    <div className="relative flex h-12 w-16 shrink-0 items-center justify-center overflow-hidden rounded-md bg-emerald-50 text-emerald-700">
+                                        {area.image ? <Image src={area.image} alt={area.name} fill className="object-cover" /> : <Hotel size={18} aria-hidden="true" />}
                                     </div>
 
                                     <div className="min-w-0 flex-1">
@@ -1396,6 +1344,11 @@ export default function Dashboard() {
                         </div>
 
                         <div className="mt-2 space-y-1 pl-6">
+                            {foodItems.length === 0 && (
+                                <p className="text-[11px] text-slate-500">
+                                    Local food recommendations for {tripDetails.destination} are not available yet.
+                                </p>
+                            )}
                             {foodItems.map((food) => (
                                 <p
                                     key={food}
@@ -1509,7 +1462,7 @@ export default function Dashboard() {
 
                         <p className="mt-2 text-sm text-slate-600">
                             Your selections will be used to create your
-                            personalized Goa trip.
+                            personalized {tripDetails.destination} trip.
                         </p>
 
                         <div className="mt-3 flex flex-wrap gap-2">
@@ -1573,7 +1526,7 @@ export default function Dashboard() {
                                 />
 
                                 <h2 id="generated-trip-plan-title" className="text-xl font-bold text-slate-800">
-                                    Your Goa Trip Plan is ready
+                                    Your {tripDetails.destination} Trip Plan is ready
                                 </h2>
                             </div>
 
@@ -1702,13 +1655,8 @@ export default function Dashboard() {
                                     key={place.name}
                                     className="overflow-hidden rounded-xl border border-slate-200"
                                 >
-                                    <div className="relative h-24">
-                                        <Image
-                                            src={place.image}
-                                            alt={place.name}
-                                            fill
-                                            className="object-cover"
-                                        />
+                                    <div className="relative flex h-24 items-center justify-center bg-emerald-50 text-emerald-700">
+                                        {place.image ? <Image src={place.image} alt={place.name} fill className="object-cover" /> : <MapPin size={28} aria-hidden="true" />}
                                     </div>
 
                                     <div className="p-3">

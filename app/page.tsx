@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import {
     ArrowRight,
     CalendarDays,
@@ -14,13 +14,246 @@ import {
     Wallet,
 } from "lucide-react";
 import LoginModal from "@/components/login-modal";
-import { defaultTripDetails, tripDetailsStorageKey } from "@/lib/trip-details";
+import {
+    defaultTripDetails,
+    getTripDetails,
+    saveTripDetails,
+} from "@/lib/trip-details";
+
+
+type LocationSuggestion = {
+    id: string;
+    name: string;
+    label: string;
+    type?: string;
+};
+
+function LocationAutocomplete({
+    label,
+    value,
+    placeholder,
+    onChange,
+}: {
+    label: string;
+    value: string;
+    placeholder: string;
+    onChange: (value: string) => void;
+}) {
+    const [suggestions, setSuggestions] = useState<LocationSuggestion[]>([]);
+    const [isOpen, setIsOpen] = useState(false);
+    const [isLoading, setIsLoading] = useState(false);
+    const [searchError, setSearchError] = useState("");
+
+    useEffect(() => {
+        const query = value.trim();
+
+        if (!isOpen || query.length < 2) {
+            setSuggestions([]);
+            setIsLoading(false);
+            setSearchError("");
+            return;
+        }
+
+        const controller = new AbortController();
+        const timeoutId = window.setTimeout(async () => {
+            setIsLoading(true);
+            setSearchError("");
+
+            try {
+                const params = new URLSearchParams({
+                    q: query,
+                    limit: "6",
+                    lang: "en",
+                });
+
+                const response = await fetch(
+                    `https://photon.komoot.io/api/?${params.toString()}`,
+                    { signal: controller.signal }
+                );
+
+                if (!response.ok) {
+                    throw new Error("Location search is temporarily unavailable.");
+                }
+
+                const result = (await response.json()) as {
+                    features?: Array<{
+                        properties?: {
+                            osm_id?: number;
+                            name?: string;
+                            city?: string;
+                            town?: string;
+                            village?: string;
+                            county?: string;
+                            state?: string;
+                            country?: string;
+                            type?: string;
+                        };
+                    }>;
+                };
+
+                const uniqueSuggestions = new Map<string, LocationSuggestion>();
+
+                for (const feature of result.features ?? []) {
+                    const properties = feature.properties;
+                    const name =
+                        properties?.name ??
+                        properties?.city ??
+                        properties?.town ??
+                        properties?.village;
+
+                    if (!name) continue;
+
+                    const locality = properties.city ?? properties.town ?? properties.village;
+                    const parts = [name];
+
+                    if (locality && locality.toLowerCase() !== name.toLowerCase()) {
+                        parts.push(locality);
+                    }
+                    if (properties.state && !parts.some((part) => part.toLowerCase() === properties.state?.toLowerCase())) {
+                        parts.push(properties.state);
+                    }
+                    if (properties.country) parts.push(properties.country);
+
+                    const labelText = [...new Set(parts)].join(", ");
+                    const key = labelText.toLowerCase();
+
+                    if (!uniqueSuggestions.has(key)) {
+                        uniqueSuggestions.set(key, {
+                            id: `${properties.osm_id ?? key}-${key}`,
+                            name,
+                            label: labelText,
+                            type: properties.type,
+                        });
+                    }
+                }
+
+                const normalizedQuery = query.toLocaleLowerCase();
+
+                const rankedSuggestions = Array.from(uniqueSuggestions.values()).sort((a, b) => {
+                    const score = (item: LocationSuggestion) => {
+                        const name = item.name.toLocaleLowerCase();
+                        const label = item.label.toLocaleLowerCase();
+
+                        if (name === normalizedQuery) return 0;
+                        if (name.startsWith(normalizedQuery)) return 1;
+                        if (label.startsWith(normalizedQuery)) return 2;
+                        if (name.includes(normalizedQuery)) return 3;
+                        if (label.includes(normalizedQuery)) return 4;
+                        return 5;
+                    };
+
+                    return score(a) - score(b) || a.label.localeCompare(b.label);
+                });
+
+                setSuggestions(rankedSuggestions.slice(0, 6));
+            } catch (error) {
+                if (error instanceof Error && error.name !== "AbortError") {
+                    setSuggestions([]);
+                    setSearchError("Could not load suggestions. You can still enter the location manually.");
+                }
+            } finally {
+                if (!controller.signal.aborted) setIsLoading(false);
+            }
+        }, 300);
+
+        return () => {
+            window.clearTimeout(timeoutId);
+            controller.abort();
+        };
+    }, [value, isOpen]);
+
+    const selectSuggestion = (suggestion: LocationSuggestion) => {
+        // Store only the selected place name; keep the full address in the dropdown for disambiguation.
+        onChange(suggestion.name);
+        setSuggestions([]);
+        setIsOpen(false);
+        setSearchError("");
+    };
+
+    return (
+        <div className={`relative border-b border-slate-200 p-4 text-sm font-semibold text-slate-600 lg:border-b-0 lg:border-r ${isOpen ? "z-50" : "z-0"}`}>
+            <label className="block" htmlFor={`location-${label.toLowerCase()}`}>
+                {label}
+            </label>
+            <div className="mt-1 flex items-center gap-2">
+                <input
+                    id={`location-${label.toLowerCase()}`}
+                    required
+                    autoComplete="off"
+                    role="combobox"
+                    aria-autocomplete="list"
+                    aria-expanded={isOpen && (suggestions.length > 0 || isLoading)}
+                    value={value}
+                    onFocus={() => setIsOpen(true)}
+                    onChange={(event) => {
+                        onChange(event.target.value);
+                        setIsOpen(true);
+                    }}
+                    onKeyDown={(event) => {
+                        if (event.key === "Escape") {
+                            setIsOpen(false);
+                            setSuggestions([]);
+                        }
+                    }}
+                    className="w-full min-w-0 bg-transparent text-base font-medium text-slate-900 outline-none"
+                    placeholder={placeholder}
+                />
+                {isLoading && (
+                    <span className="shrink-0 text-xs font-normal text-slate-400">Searching…</span>
+                )}
+            </div>
+
+            {isOpen && value.trim().length >= 2 && (suggestions.length > 0 || searchError) && (
+                <div
+                    role="listbox"
+                    aria-label={`${label} location suggestions`}
+                    className="absolute left-0 top-full z-[100] mt-2 max-h-72 w-max min-w-full max-w-[min(24rem,calc(100vw-2rem))] overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 text-slate-800 shadow-xl"
+                >
+                    {suggestions.map((suggestion) => (
+                        <button
+                            key={suggestion.id}
+                            type="button"
+                            role="option"
+                            aria-selected={false}
+                            onMouseDown={(event) => event.preventDefault()}
+                            onClick={() => selectSuggestion(suggestion)}
+                            className="flex w-full items-start gap-2 rounded-lg px-3 py-2.5 text-left hover:bg-blue-50 focus:bg-blue-50 focus:outline-none"
+                        >
+                            <MapPin size={16} className="mt-0.5 shrink-0 text-blue-600" />
+                            <span className="min-w-0">
+                                <span className="block text-sm font-semibold">{suggestion.name}</span>
+                                <span className="block text-xs font-normal text-slate-500">{suggestion.label}</span>
+                            </span>
+                        </button>
+                    ))}
+                    {searchError && (
+                        <p role="status" className="px-3 py-2 text-xs font-normal text-amber-700">
+                            {searchError}
+                        </p>
+                    )}
+                </div>
+            )}
+
+            {isOpen && value.trim().length >= 2 && !isLoading && !searchError && suggestions.length === 0 && (
+                <div className="absolute left-0 top-full z-[100] mt-2 w-max min-w-full max-w-[min(24rem,calc(100vw-2rem))] rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs font-normal text-slate-500 shadow-xl">
+                    No suggestions found. You can still enter the location manually.
+                </div>
+            )}
+        </div>
+    );
+}
+
 
 export default function Home() {
     const router = useRouter();
     const [tripDetails, setTripDetails] = useState(defaultTripDetails);
-    const [activeTool, setActiveTool] = useState("Trip planner");
     const [loginOpen, setLoginOpen] = useState(false);
+    const [saveError, setSaveError] = useState("");
+
+    useEffect(() => {
+        const storedTripDetails = getTripDetails();
+        setTripDetails(storedTripDetails);
+    }, []);
 
     const updateDetail = (key: keyof typeof tripDetails, value: string) => {
         setTripDetails((current) => ({ ...current, [key]: value }));
@@ -28,6 +261,8 @@ export default function Home() {
 
     const handlePlanSubmit = (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
+        setSaveError("");
+
         const nextTripDetails = {
             ...tripDetails,
             origin: tripDetails.origin.trim(),
@@ -35,11 +270,18 @@ export default function Home() {
         };
 
         if (!nextTripDetails.origin || !nextTripDetails.destination) {
+            setSaveError("Please enter both your origin and destination.");
             return;
         }
 
-        window.localStorage.setItem(tripDetailsStorageKey, JSON.stringify(nextTripDetails));
-        router.push("/dashboard#trip-options");
+        try {
+            saveTripDetails(nextTripDetails);
+            router.push("/dashboard#trip-options");
+        } catch {
+            setSaveError(
+                "Unable to save your trip. Please check your browser storage and try again.",
+            );
+        }
     };
 
     return (
@@ -57,33 +299,55 @@ export default function Home() {
                 </nav>
 
                 <div className="mx-auto max-w-7xl px-5 pb-12 pt-7 sm:px-8 lg:px-10 lg:pb-16">
-                    <div className="flex flex-wrap gap-2">
-                        {["Trip planner", "Stays", "Transport"].map((tool) => <button key={tool} type="button" onClick={() => setActiveTool(tool)} aria-pressed={activeTool === tool} className={`rounded-full border px-4 py-2 text-sm font-bold transition ${activeTool === tool ? "border-blue-500 bg-blue-600 text-white" : "border-white/45 text-white hover:bg-white/10"}`}>{tool}</button>)}
-                    </div>
                     <h1 className="mt-7 text-4xl font-bold tracking-[-0.04em] sm:text-5xl">Plan a better trip. <span className="text-blue-300">One simple start.</span></h1>
                     <p className="mt-3 text-base text-blue-100">Set your route and travel preferences—Pilgora organizes the details in one place.</p>
 
                     <form onSubmit={handlePlanSubmit} className="mt-8">
-                        <div className="grid overflow-hidden rounded-2xl bg-white shadow-2xl shadow-slate-950/30 sm:grid-cols-2 lg:grid-cols-[1.15fr_1.15fr_.85fr_.95fr_1fr_.85fr_1fr] lg:items-stretch">
-                            <label className="border-b border-slate-200 p-4 text-sm font-semibold text-slate-600 lg:border-b-0 lg:border-r">From<input required value={tripDetails.origin} onChange={(event) => updateDetail("origin", event.target.value)} className="mt-1 w-full bg-transparent text-base font-medium text-slate-900 outline-none" placeholder="City or airport" /></label>
-                            <label className="border-b border-slate-200 p-4 text-sm font-semibold text-slate-600 lg:border-b-0 lg:border-r">To<input required value={tripDetails.destination} onChange={(event) => updateDetail("destination", event.target.value)} className="mt-1 w-full bg-transparent text-base font-medium text-slate-900 outline-none" placeholder="City or destination" /></label>
+                        <div className="relative grid rounded-2xl bg-white shadow-2xl shadow-slate-950/30 sm:grid-cols-2 lg:grid-cols-[1.15fr_1.15fr_.85fr_.95fr_1fr_.85fr_1fr] lg:items-stretch">
+                            <LocationAutocomplete
+                                label="From"
+                                value={tripDetails.origin}
+                                placeholder="City or airport"
+                                onChange={(value) => updateDetail("origin", value)}
+                            />
+                            <LocationAutocomplete
+                                label="To"
+                                value={tripDetails.destination}
+                                placeholder="City or destination"
+                                onChange={(value) => updateDetail("destination", value)}
+                            />
                             <label className="border-b border-slate-200 p-4 text-sm font-semibold text-slate-600 lg:border-b-0 lg:border-r"><span className="flex items-center gap-1"><CalendarDays size={14} />Duration</span><select value={tripDetails.duration} onChange={(event) => updateDetail("duration", event.target.value)} className="mt-1 w-full bg-transparent text-base font-medium text-slate-900 outline-none"><option>2 Days</option><option>3 Days</option><option>4 Days</option><option>5 Days</option><option>7 Days</option></select></label>
                             <label className="border-b border-slate-200 p-4 text-sm font-semibold text-slate-600 lg:border-b-0 lg:border-r"><span className="flex items-center gap-1"><Users size={14} />Travellers</span><select value={tripDetails.travellers} onChange={(event) => updateDetail("travellers", event.target.value)} className="mt-1 w-full bg-transparent text-base font-medium text-slate-900 outline-none"><option>1 Adult</option><option>2 Adults</option><option>3 Adults</option><option>4 Adults</option><option>Family</option><option>Friends</option></select></label>
                             <label className="border-b border-slate-200 p-4 text-sm font-semibold text-slate-600 lg:border-b-0 lg:border-r"><span className="flex items-center gap-1"><Wallet size={14} />Budget</span><select value={tripDetails.budget} onChange={(event) => updateDetail("budget", event.target.value)} className="mt-1 w-full bg-transparent text-base font-medium text-slate-900 outline-none"><option>Budget</option><option>Moderate Budget</option><option>Comfortable Budget</option><option>Luxury Budget</option></select></label>
                             <label className="border-b border-slate-200 p-4 text-sm font-semibold text-slate-600 sm:border-b-0 lg:border-r"><span className="flex items-center gap-1"><Sparkles size={14} />Style</span><select value={tripDetails.tripType} onChange={(event) => updateDetail("tripType", event.target.value)} className="mt-1 w-full bg-transparent text-base font-medium text-slate-900 outline-none"><option>Solo</option><option>Couple</option><option>Family</option><option>Friends</option></select></label>
                             <button type="submit" className="m-2 flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-4 text-sm font-bold text-white transition hover:bg-blue-700">Build plan <ArrowRight size={17} /></button>
                         </div>
-                        <p className="mt-3 flex items-center gap-2 text-sm text-blue-100"><CheckCircle2 size={15} className="text-blue-300" /> Your preferences are saved to your trip workspace. Goa is the current destination-data demo.</p>
+                        <p className="mt-3 flex items-center gap-2 text-sm text-blue-100"><CheckCircle2 size={15} className="text-blue-300" /> Start typing a city or place to see location suggestions. Destination itineraries and costs may still be estimates.</p>
+                        {saveError && (
+                            <p role="alert" className="mt-3 text-sm font-medium text-red-300">
+                                {saveError}
+                            </p>
+                        )}
                     </form>
                 </div>
             </section>
 
             <section className="bg-white px-5 py-10 text-slate-900 sm:px-8 lg:px-10">
-                <div className="mx-auto grid max-w-7xl gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                    <Link href="/dashboard#trip-options" className="flex items-center gap-3 rounded-2xl bg-[#05203c] p-5 text-sm font-bold text-white shadow-lg shadow-slate-200 transition hover:-translate-y-0.5"><Sparkles size={21} className="text-blue-300" />Build my trip</Link>
-                    <Link href="/stay" className="flex items-center gap-3 rounded-2xl bg-[#05203c] p-5 text-sm font-bold text-white shadow-lg shadow-slate-200 transition hover:-translate-y-0.5"><MapPin size={21} className="text-blue-300" />Compare stays</Link>
-                    <Link href="/transport" className="flex items-center gap-3 rounded-2xl bg-[#05203c] p-5 text-sm font-bold text-white shadow-lg shadow-slate-200 transition hover:-translate-y-0.5"><Plane size={21} className="text-blue-300" />Explore transport</Link>
-                    <Link href="/places" className="flex items-center gap-3 rounded-2xl bg-[#05203c] p-5 text-sm font-bold text-white shadow-lg shadow-slate-200 transition hover:-translate-y-0.5"><MapPin size={21} className="text-blue-300" />Explore places</Link>
+                <div className="mx-auto grid max-w-7xl gap-4 sm:grid-cols-2">
+                    <Link
+                        href="/dashboard#trip-options"
+                        className="flex items-center gap-3 rounded-2xl bg-[#05203c] p-5 text-sm font-bold text-white shadow-lg shadow-slate-200 transition hover:-translate-y-0.5"
+                    >
+                        <Sparkles size={21} className="text-blue-300" />
+                        Build my trip
+                    </Link>
+                    <Link
+                        href="/places"
+                        className="flex items-center gap-3 rounded-2xl bg-[#05203c] p-5 text-sm font-bold text-white shadow-lg shadow-slate-200 transition hover:-translate-y-0.5"
+                    >
+                        <MapPin size={21} className="text-blue-300" />
+                        Explore places
+                    </Link>
                 </div>
             </section>
 

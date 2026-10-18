@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { defaultTripDetails, isTripDetails, tripDetailsStorageKey } from "@/lib/trip-details";
+import { defaultTripDetails, getTripDetails, isTripDetails, saveTripDetails as persistTripDetails, tripDetailsStorageKey } from "@/lib/trip-details";
+import LocationAutocomplete from "@/components/location-autocomplete";
 import {
     ChevronDown,
     Edit3,
@@ -28,23 +29,32 @@ export default function Header({ onMenuClick }: HeaderProps) {
     const [tripEditorOpen, setTripEditorOpen] = useState(false);
 
     useEffect(() => {
-        const loadStoredTrip = window.setTimeout(() => {
+        const loadStoredTrip = () => {
             try {
-                const storedTripDetails = window.localStorage.getItem(tripDetailsStorageKey);
-                if (!storedTripDetails) {
-                    return;
-                }
-
-                const parsedTripDetails: unknown = JSON.parse(storedTripDetails);
-                if (isTripDetails(parsedTripDetails)) {
-                    setTripDetails(parsedTripDetails);
-                }
+                const saved = getTripDetails();
+                setTripDetails(saved);
+                setDraftTripDetails(saved);
             } catch {
-                window.localStorage.removeItem(tripDetailsStorageKey);
+                // Keep the default trip details if storage cannot be read.
             }
-        }, 0);
+        };
 
-        return () => window.clearTimeout(loadStoredTrip);
+        const initialLoad = window.setTimeout(loadStoredTrip, 0);
+        const handleUpdated = () => loadStoredTrip();
+        const handleStorage = (event: StorageEvent) => {
+            if (event.key === tripDetailsStorageKey) loadStoredTrip();
+        };
+
+        window.addEventListener("pilgora-trip-details-updated", handleUpdated);
+        window.addEventListener("storage", handleStorage);
+        window.addEventListener("focus", handleUpdated);
+
+        return () => {
+            window.clearTimeout(initialLoad);
+            window.removeEventListener("pilgora-trip-details-updated", handleUpdated);
+            window.removeEventListener("storage", handleStorage);
+            window.removeEventListener("focus", handleUpdated);
+        };
     }, []);
 
     const openTripEditor = () => {
@@ -64,10 +74,16 @@ export default function Header({ onMenuClick }: HeaderProps) {
             return;
         }
 
-        setTripDetails(nextTripDetails);
-        window.localStorage.setItem(tripDetailsStorageKey, JSON.stringify(nextTripDetails));
-        setTripEditorOpen(false);
-        setShareStatus("Trip details saved on this device.");
+        try {
+            persistTripDetails(nextTripDetails);
+            setTripDetails(nextTripDetails);
+            setDraftTripDetails(nextTripDetails);
+            window.dispatchEvent(new Event("pilgora-trip-details-updated"));
+            setTripEditorOpen(false);
+            setShareStatus("Trip details saved on this device.");
+        } catch {
+            setShareStatus("Could not save trip details. Please try again.");
+        }
     };
 
     const handleShare = async () => {
@@ -256,26 +272,26 @@ export default function Header({ onMenuClick }: HeaderProps) {
                                 <p className="text-sm font-bold text-slate-800">Route & preferences</p>
                             </div>
                         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                            <label className="rounded-xl border border-slate-200 bg-white p-3 text-sm font-medium text-slate-700 shadow-sm">
-                                From
-                                <input
-                                    required
+                            <div className="relative z-20 rounded-xl border border-slate-200 bg-white p-3 text-sm font-medium text-slate-700 shadow-sm">
+                                <LocationAutocomplete
+                                    label="From"
                                     value={draftTripDetails.origin}
-                                    onChange={(event) => setDraftTripDetails((current) => ({ ...current, origin: event.target.value }))}
-                                    className="mt-1.5 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                                     placeholder="e.g. Bengaluru"
+                                    onChange={(value) => setDraftTripDetails((current) => ({ ...current, origin: value }))}
+                                    inputClassName="mt-1.5 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                                    dropdownClassName="left-0 right-0 z-[100] mt-2"
                                 />
-                            </label>
-                            <label className="rounded-xl border border-slate-200 bg-white p-3 text-sm font-medium text-slate-700 shadow-sm">
-                                To
-                                <input
-                                    required
+                            </div>
+                            <div className="relative z-10 rounded-xl border border-slate-200 bg-white p-3 text-sm font-medium text-slate-700 shadow-sm">
+                                <LocationAutocomplete
+                                    label="To"
                                     value={draftTripDetails.destination}
-                                    onChange={(event) => setDraftTripDetails((current) => ({ ...current, destination: event.target.value }))}
-                                    className="mt-1.5 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                                     placeholder="e.g. Goa"
+                                    onChange={(value) => setDraftTripDetails((current) => ({ ...current, destination: value }))}
+                                    inputClassName="mt-1.5 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                                    dropdownClassName="left-0 right-0 z-[100] mt-2"
                                 />
-                            </label>
+                            </div>
                             <label className="rounded-xl border border-slate-200 bg-white p-3 text-sm font-medium text-slate-700 shadow-sm">
                                 Duration
                                 <select value={draftTripDetails.duration} onChange={(event) => setDraftTripDetails((current) => ({ ...current, duration: event.target.value }))} className="mt-1.5 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100">

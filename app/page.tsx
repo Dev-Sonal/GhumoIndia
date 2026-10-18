@@ -13,12 +13,14 @@ import {
     Users,
     Wallet,
 } from "lucide-react";
+import LoginModal from "@/components/login-modal";
 import { defaultTripDetails, tripDetailsStorageKey } from "@/lib/trip-details";
 
 export default function Home() {
     const router = useRouter();
     const [tripDetails, setTripDetails] = useState(defaultTripDetails);
     const [activeTool, setActiveTool] = useState("Trip planner");
+    const [loginOpen, setLoginOpen] = useState(false);
 
     const updateDetail = (key: keyof typeof tripDetails, value: string) => {
         setTripDetails((current) => ({ ...current, [key]: value }));
@@ -48,7 +50,10 @@ export default function Home() {
                         <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-500 shadow-lg shadow-blue-500/30"><Plane size={22} className="rotate-[-25deg]" /></span>
                         <span><span className="block text-xl font-bold tracking-tight">Pilgora</span><span className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-blue-200">Travel smarter</span></span>
                     </Link>
-                    <div className="flex items-center gap-3"><a href="#what-you-get" className="hidden text-sm font-semibold text-blue-100 hover:text-white sm:block">How it works</a><Link href="/dashboard" className="rounded-xl bg-white px-4 py-2 text-sm font-bold text-[#05203c] hover:bg-blue-50">Open my plan</Link></div>
+                    <div className="flex items-center gap-3">
+                        <a href="#what-you-get" className="hidden text-sm font-semibold text-blue-100 hover:text-white sm:block">How it works</a>
+                        <button type="button" onClick={() => setLoginOpen(true)} className="rounded-xl bg-white px-4 py-2 text-sm font-bold text-[#05203c] hover:bg-blue-50">Log in</button>
+                    </div>
                 </nav>
 
                 <div className="mx-auto max-w-7xl px-5 pb-12 pt-7 sm:px-8 lg:px-10 lg:pb-16">
@@ -118,6 +123,8 @@ export default function Home() {
                     <button type="button" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-blue-500 px-5 py-3 text-sm font-bold text-white hover:bg-blue-400">Plan my trip <ArrowRight size={17} /></button>
                 </div>
             </section>
+
+            <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)} />
         </main>
     );
 }

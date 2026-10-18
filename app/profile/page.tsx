@@ -1,8 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import Sidebar from "@/components/sidebar";
-import Header from "@/components/header";
+import AppShell from "@/components/app-shell";
 
 import {
     User,
@@ -56,14 +55,8 @@ export default function ProfilePage() {
     };
 
     return (
-        <div className="flex min-h-screen bg-slate-50">
-
-            <Sidebar />
-
-            <main className="min-w-0 flex-1">
-                <Header />
-
-                <section className="p-4 md:p-6 lg:p-8">
+        <AppShell>
+            <section className="p-4 md:p-6 lg:p-8">
 
                     {/* ==============================
                         PAGE HEADER
@@ -93,6 +86,7 @@ export default function ProfilePage() {
 
                         {/* SAVE BUTTON */}
                         <button
+                            type="button"
                             onClick={handleSave}
                             className={`flex items-center justify-center gap-2 rounded-lg px-5 py-3 text-sm font-semibold text-white transition ${
                                 saved
@@ -103,7 +97,7 @@ export default function ProfilePage() {
                             {saved ? (
                                 <>
                                     <Check size={18} />
-                                    Saved
+                                    Saved for this session
                                 </>
                             ) : (
                                 <>
@@ -114,10 +108,14 @@ export default function ProfilePage() {
                         </button>
                     </div>
 
+                    <p className="mt-3 text-xs text-slate-500" role="status" aria-live="polite">
+                        Profile changes are demonstration data stored only while this page is open.
+                    </p>
+
                     {/* ==============================
                         PROFILE INFORMATION
                     ============================== */}
-                    <div className="mt-8 rounded-xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
+                    <div id="contact-details" className="mt-8 scroll-mt-28 rounded-xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
 
                         <div className="flex items-center gap-2">
                             <User
@@ -240,7 +238,7 @@ export default function ProfilePage() {
                     {/* ==============================
                         TRAVEL PREFERENCES
                     ============================== */}
-                    <div className="mt-5 rounded-xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
+                    <div id="travel-preferences" className="mt-5 scroll-mt-28 rounded-xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
 
                         <div className="flex items-center gap-2">
 
@@ -403,8 +401,7 @@ export default function ProfilePage() {
 
                     </div>
 
-                </section>
-            </main>
-        </div>
+            </section>
+        </AppShell>
     );
 }

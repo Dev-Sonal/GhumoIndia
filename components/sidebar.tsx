@@ -18,17 +18,22 @@ import {
     Settings,
     Headphones,
     Plane,
-    MapPinned,
+    X,
 } from "lucide-react";
 
-export default function Sidebar() {
+type SidebarProps = {
+    onClose?: () => void;
+    onNavigate?: () => void;
+};
+
+export default function Sidebar({ onClose, onNavigate }: SidebarProps) {
     const pathname = usePathname();
 
     const menuItems = [
         {
             name: "Trip Dashboard",
             icon: Home,
-            href: "/",
+            href: "/dashboard",
         },
         {
             name: "Itinerary",
@@ -91,15 +96,22 @@ export default function Sidebar() {
     ];
 
     const isActive = (href: string) => {
-        if (href === "/") {
-            return pathname === "/";
-        }
-
         return pathname === href;
     };
 
     return (
-        <aside className="flex h-screen w-64 shrink-0 flex-col border-r border-slate-200 bg-white px-4 py-5">
+        <aside className="relative flex h-screen w-64 shrink-0 flex-col border-r border-slate-200 bg-white px-4 py-5">
+
+            {onClose && (
+                <button
+                    type="button"
+                    onClick={onClose}
+                    className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-800 lg:hidden"
+                    aria-label="Close navigation"
+                >
+                    <X size={19} />
+                </button>
+            )}
 
             {/* =====================================
                 PILGORA BRAND
@@ -108,6 +120,7 @@ export default function Sidebar() {
 
                 <Link
                     href="/"
+                    onClick={onNavigate}
                     className="group flex items-center gap-3"
                 >
                     {/* Logo */}
@@ -167,6 +180,7 @@ export default function Sidebar() {
                             <Link
                                 key={item.name}
                                 href={item.href}
+                                onClick={onNavigate}
                                 className={`relative flex items-center gap-4 rounded-lg px-3 py-3 text-sm transition-all duration-200 ${
                                     active
                                         ? "bg-blue-50 font-semibold text-blue-700"
@@ -219,6 +233,7 @@ export default function Sidebar() {
                             <Link
                                 key={item.name}
                                 href={item.href}
+                                onClick={onNavigate}
                                 className={`flex items-center gap-4 rounded-lg px-3 py-2.5 text-sm transition-all duration-200 ${
                                     active
                                         ? "bg-blue-50 font-semibold text-blue-700"

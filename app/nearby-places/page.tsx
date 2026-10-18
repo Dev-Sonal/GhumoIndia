@@ -1,5 +1,7 @@
-import Sidebar from "@/components/sidebar";
-import Header from "@/components/header";
+"use client";
+
+import { useState } from "react";
+import AppShell from "@/components/app-shell";
 
 import {
     Map,
@@ -14,6 +16,7 @@ import {
 } from "lucide-react";
 
 export default function NearbyPlacesPage() {
+    const [draftPlaces, setDraftPlaces] = useState<string[]>([]);
     const nearbyPlaces = [
         {
             name: "Candolim Beach",
@@ -102,13 +105,8 @@ export default function NearbyPlacesPage() {
     ];
 
     return (
-        <div className="flex min-h-screen bg-slate-50">
-            <Sidebar />
-
-            <main className="min-w-0 flex-1">
-                <Header />
-
-                <section className="p-4 md:p-6 lg:p-8">
+        <AppShell>
+            <section className="p-4 md:p-6 lg:p-8">
 
                     {/* PAGE HEADER */}
                     <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
@@ -349,8 +347,19 @@ export default function NearbyPlacesPage() {
                                 </div>
 
                                 {/* BUTTON */}
-                                <button className="mt-6 flex w-full items-center justify-center gap-2 rounded-lg border border-blue-200 py-3 text-sm font-semibold text-blue-600 transition hover:bg-blue-50">
-                                    Add to Trip
+                                <button
+                                    type="button"
+                                    onClick={() => setDraftPlaces((current) => current.includes(place.name)
+                                        ? current.filter((name) => name !== place.name)
+                                        : [...current, place.name])}
+                                    aria-pressed={draftPlaces.includes(place.name)}
+                                    className={`mt-6 flex w-full items-center justify-center gap-2 rounded-lg border py-3 text-sm font-semibold transition ${
+                                        draftPlaces.includes(place.name)
+                                            ? "border-green-200 bg-green-50 text-green-700 hover:bg-green-100"
+                                            : "border-blue-200 text-blue-600 hover:bg-blue-50"
+                                    }`}
+                                >
+                                    {draftPlaces.includes(place.name) ? "Added to this session" : "Add to Trip"}
 
                                     <ChevronRight size={17} />
                                 </button>
@@ -375,7 +384,7 @@ export default function NearbyPlacesPage() {
                                 </h3>
 
                                 <p className="mt-2 text-sm leading-6 text-slate-600">
-                                    Don't add every nearby destination just because it is close.
+                                    Don&apos;t add every nearby destination just because it is close.
                                     Choose places that match your interests and group destinations
                                     in the same direction together. This helps reduce unnecessary
                                     travel time and transport costs.
@@ -384,8 +393,7 @@ export default function NearbyPlacesPage() {
                         </div>
                     </div>
 
-                </section>
-            </main>
-        </div>
+            </section>
+        </AppShell>
     );
 }

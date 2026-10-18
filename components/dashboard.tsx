@@ -1,7 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
+
 
 import {
     CalendarDays,
@@ -30,19 +32,12 @@ import {
     Plane,
     BedDouble,
     Wallet,
-    Lightbulb,
-    Clock3,
-    Route,
-    CircleDollarSign,
     Church,
     ShipWheel,
     Map,
     Hotel,
     Soup,
-    PiggyBank,
-    Ticket,
     CalendarCheck,
-    Navigation,
     Bike,
 } from "lucide-react";
 
@@ -67,6 +62,29 @@ export default function Dashboard() {
         useState("Candolim");
 
     const [showTripPlan, setShowTripPlan] = useState(false);
+    const tripPlanDialogRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        if (!showTripPlan) {
+            return;
+        }
+
+        const previousOverflow = document.body.style.overflow;
+        const closeOnEscape = (event: KeyboardEvent) => {
+            if (event.key === "Escape") {
+                setShowTripPlan(false);
+            }
+        };
+
+        document.body.style.overflow = "hidden";
+        tripPlanDialogRef.current?.focus();
+        window.addEventListener("keydown", closeOnEscape);
+
+        return () => {
+            document.body.style.overflow = previousOverflow;
+            window.removeEventListener("keydown", closeOnEscape);
+        };
+    }, [showTripPlan]);
 
     // =========================================================
     // TRAVEL STYLE DATA
@@ -519,7 +537,7 @@ export default function Dashboard() {
     // =========================================================
 
     return (
-        <section className="min-h-screen p-4 md:p-6 lg:p-8">
+        <section id="trip-options" className="min-h-screen p-4 md:p-6 lg:p-8">
 
             {/* =====================================================
                 TOP SECTION
@@ -552,7 +570,7 @@ export default function Dashboard() {
                                 </h1>
 
                                 <p className="mt-2 text-sm text-slate-100 sm:text-base">
-                                    We've created the best plan for you with the
+                                    We&apos;ve created the best plan for you with the
                                     perfect balance of experience and budget.
                                 </p>
                             </div>
@@ -981,7 +999,8 @@ export default function Dashboard() {
 
                     <div className="mt-4 space-y-3">
                         {displayedPlaces.map((place) => (
-                            <button
+                            <Link
+                                href="/places"
                                 key={place.name}
                                 className="flex w-full items-center gap-3 text-left"
                             >
@@ -1001,7 +1020,7 @@ export default function Dashboard() {
                                 <span className="text-xs text-slate-500">
                                     {place.duration}
                                 </span>
-                            </button>
+                            </Link>
                         ))}
                     </div>
 
@@ -1189,9 +1208,9 @@ export default function Dashboard() {
                         })}
                     </div>
 
-                    <button className="mt-4 w-full text-sm font-medium text-blue-600">
+                    <Link href="/itinerary" className="mt-4 block w-full text-center text-sm font-medium text-blue-600">
                         View Full Itinerary
-                    </button>
+                    </Link>
                 </div>
 
                 {/* TRANSPORT */}
@@ -1266,9 +1285,9 @@ export default function Dashboard() {
                         })}
                     </div>
 
-                    <button className="mt-4 w-full text-sm font-medium text-blue-600">
+                    <Link href="/transport" className="mt-4 block w-full text-center text-sm font-medium text-blue-600">
                         Compare All Options
-                    </button>
+                    </Link>
                 </div>
 
                 {/* STAY AREAS */}
@@ -1344,9 +1363,9 @@ export default function Dashboard() {
                         })}
                     </div>
 
-                    <button className="mt-4 w-full text-sm font-medium text-blue-600">
+                    <Link href="/stay" className="mt-4 block w-full text-center text-sm font-medium text-blue-600">
                         View All Areas & Stays
-                    </button>
+                    </Link>
                 </div>
 
                 {/* FOOD GUIDE */}
@@ -1424,9 +1443,9 @@ export default function Dashboard() {
                         </div>
                     </div>
 
-                    <button className="mt-5 w-full text-sm font-medium text-blue-600">
+                    <Link href="/food-guide" className="mt-5 block w-full text-center text-sm font-medium text-blue-600">
                         View Food Recommendations
-                    </button>
+                    </Link>
                 </div>
             </div>
 
@@ -1464,9 +1483,9 @@ export default function Dashboard() {
                     })}
                 </div>
 
-                <button className="mt-3 w-full text-sm font-medium text-blue-600">
+                <Link href="/ways-to-save" className="mt-3 block w-full text-center text-sm font-medium text-blue-600">
                     View All Money Saving Tips
-                </button>
+                </Link>
             </div>
 
             {/* =========================================================
@@ -1513,6 +1532,7 @@ export default function Dashboard() {
                     </div>
 
                     <button
+                        type="button"
                         onClick={() => setShowTripPlan(true)}
                         className="flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700"
                     >
@@ -1526,7 +1546,22 @@ export default function Dashboard() {
                 GENERATED PLAN
             ========================================================= */}
             {showTripPlan && (
-                <div className="mt-5 rounded-2xl border border-blue-200 bg-white p-5 shadow-md">
+                <div className="fixed inset-0 z-[60] flex items-end bg-slate-950/45 p-3 backdrop-blur-sm sm:items-center sm:justify-center sm:p-6">
+                    <button
+                        type="button"
+                        className="absolute inset-0 cursor-default"
+                        aria-label="Close generated trip plan"
+                        onClick={() => setShowTripPlan(false)}
+                    />
+
+                    <div
+                        ref={tripPlanDialogRef}
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="generated-trip-plan-title"
+                        tabIndex={-1}
+                        className="animate-page-in relative z-10 max-h-[88dvh] w-full max-w-5xl overflow-y-auto rounded-2xl border border-blue-200 bg-white p-5 shadow-2xl sm:p-6"
+                    >
 
                     <div className="flex items-start justify-between gap-4">
 
@@ -1537,8 +1572,8 @@ export default function Dashboard() {
                                     className="text-blue-600"
                                 />
 
-                                <h2 className="text-xl font-bold text-slate-800">
-                                    Your Goa Trip Plan ✨
+                                <h2 id="generated-trip-plan-title" className="text-xl font-bold text-slate-800">
+                                    Your Goa Trip Plan is ready
                                 </h2>
                             </div>
 
@@ -1549,6 +1584,7 @@ export default function Dashboard() {
                         </div>
 
                         <button
+                            type="button"
                             onClick={() =>
                                 setShowTripPlan(false)
                             }
@@ -1693,6 +1729,7 @@ export default function Dashboard() {
                     <div className="mt-5 flex flex-col gap-3 sm:flex-row">
 
                         <button
+                            type="button"
                             onClick={() =>
                                 setShowTripPlan(false)
                             }
@@ -1701,14 +1738,13 @@ export default function Dashboard() {
                             Modify My Choices
                         </button>
 
-                        <button
-                            onClick={() =>
-                                setShowTripPlan(false)
-                            }
-                            className="flex-1 rounded-lg bg-blue-600 py-3 text-sm font-semibold text-white hover:bg-blue-700"
+                        <Link
+                            href="/itinerary"
+                            className="flex-1 rounded-lg bg-blue-600 py-3 text-center text-sm font-semibold text-white hover:bg-blue-700"
                         >
                             Continue to Full Itinerary
-                        </button>
+                        </Link>
+                    </div>
                     </div>
                 </div>
             )}

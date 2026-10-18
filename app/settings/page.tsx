@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import Sidebar from "@/components/sidebar";
-import Header from "@/components/header";
+import AppShell from "@/components/app-shell";
+import Link from "next/link";
 
 import {
     Bell,
@@ -19,44 +19,42 @@ import {
     Check,
 } from "lucide-react";
 
+type ToggleProps = {
+    enabled: boolean;
+    onChange: () => void;
+};
+
+function Toggle({ enabled, onChange }: ToggleProps) {
+    return (
+        <button
+            type="button"
+            onClick={onChange}
+            className={`relative h-6 w-11 rounded-full transition ${
+                enabled ? "bg-blue-600" : "bg-slate-300"
+            }`}
+            aria-label="Toggle setting"
+            aria-pressed={enabled}
+        >
+            <span
+                className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow-sm transition ${
+                    enabled ? "left-6" : "left-1"
+                }`}
+            />
+        </button>
+    );
+}
+
 export default function SettingsPage() {
     const [emailNotifications, setEmailNotifications] = useState(true);
     const [tripUpdates, setTripUpdates] = useState(true);
     const [priceAlerts, setPriceAlerts] = useState(true);
     const [travelTips, setTravelTips] = useState(false);
-
-    const Toggle = ({
-        enabled,
-        onChange,
-    }: {
-        enabled: boolean;
-        onChange: () => void;
-    }) => {
-        return (
-            <button
-                onClick={onChange}
-                className={`relative h-6 w-11 rounded-full transition ${
-                    enabled ? "bg-blue-600" : "bg-slate-300"
-                }`}
-                aria-label="Toggle setting"
-            >
-                <span
-                    className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow-sm transition ${
-                        enabled ? "left-6" : "left-1"
-                    }`}
-                />
-            </button>
-        );
-    };
+    const [language, setLanguage] = useState("English");
+    const [notice, setNotice] = useState("");
 
     return (
-        <div className="flex min-h-screen bg-slate-50">
-            <Sidebar />
-
-            <main className="min-w-0 flex-1">
-                <Header />
-
-                <section className="p-4 md:p-6 lg:p-8">
+        <AppShell>
+            <section className="p-4 md:p-6 lg:p-8">
                     {/* PAGE HEADER */}
                     <div>
                         <h1 className="text-2xl font-bold text-slate-800">
@@ -113,10 +111,10 @@ export default function SettingsPage() {
                                         </div>
                                     </div>
 
-                                    <button className="flex items-center justify-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50">
+                                    <Link href="/profile" className="flex items-center justify-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50">
                                         <Pencil size={16} />
                                         Edit Profile
-                                    </button>
+                                    </Link>
                                 </div>
 
                                 <div className="flex items-center justify-between p-5">
@@ -162,9 +160,7 @@ export default function SettingsPage() {
                                         </div>
                                     </div>
 
-                                    <button className="text-sm font-medium text-blue-600 hover:text-blue-700">
-                                        Add
-                                    </button>
+                                    <Link href="/profile#contact-details" className="text-sm font-medium text-blue-600 hover:text-blue-700">Add</Link>
                                 </div>
                             </div>
                         </div>
@@ -205,10 +201,10 @@ export default function SettingsPage() {
                                         </p>
                                     </div>
 
-                                    <button className="flex items-center gap-2 text-sm font-medium text-blue-600">
+                                    <Link href="/profile#travel-preferences" className="flex items-center gap-2 text-sm font-medium text-blue-600">
                                         Moderate
                                         <ChevronRight size={16} />
-                                    </button>
+                                    </Link>
                                 </div>
 
                                 <div className="flex items-center justify-between p-5">
@@ -222,10 +218,10 @@ export default function SettingsPage() {
                                         </p>
                                     </div>
 
-                                    <button className="flex items-center gap-2 text-sm font-medium text-blue-600">
+                                    <Link href="/profile#travel-preferences" className="flex items-center gap-2 text-sm font-medium text-blue-600">
                                         Recommended
                                         <ChevronRight size={16} />
-                                    </button>
+                                    </Link>
                                 </div>
 
                                 <div className="flex items-center justify-between p-5">
@@ -389,7 +385,11 @@ export default function SettingsPage() {
                             </div>
 
                             <div className="divide-y divide-slate-100">
-                                <button className="flex w-full items-center justify-between p-5 text-left transition hover:bg-slate-50">
+                                <button
+                                    type="button"
+                                    onClick={() => setNotice("Password changes require connected authentication; this demonstration does not store account credentials.")}
+                                    className="flex w-full items-center justify-between p-5 text-left transition hover:bg-slate-50"
+                                >
                                     <div>
                                         <p className="font-medium text-slate-800">
                                             Change Password
@@ -406,7 +406,15 @@ export default function SettingsPage() {
                                     />
                                 </button>
 
-                                <button className="flex w-full items-center justify-between p-5 text-left transition hover:bg-slate-50">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        const nextLanguage = language === "English" ? "Hindi" : "English";
+                                        setLanguage(nextLanguage);
+                                        setNotice(`${nextLanguage} is selected for this browser session. Full translation requires an i18n integration.`);
+                                    }}
+                                    className="flex w-full items-center justify-between p-5 text-left transition hover:bg-slate-50"
+                                >
                                     <div className="flex items-center gap-3">
                                         <Globe
                                             size={19}
@@ -419,7 +427,7 @@ export default function SettingsPage() {
                                             </p>
 
                                             <p className="mt-1 text-sm text-slate-500">
-                                                English
+                                                {language}
                                             </p>
                                         </div>
                                     </div>
@@ -447,7 +455,11 @@ export default function SettingsPage() {
                                         </p>
                                     </div>
 
-                                    <button className="flex shrink-0 items-center gap-2 rounded-lg border border-red-200 px-4 py-2 text-sm font-medium text-red-600 transition hover:bg-red-50">
+                                    <button
+                                        type="button"
+                                        onClick={() => setNotice("Account deletion requires authenticated server-side data handling and is unavailable in this demonstration.")}
+                                        className="flex shrink-0 items-center gap-2 rounded-lg border border-red-200 px-4 py-2 text-sm font-medium text-red-600 transition hover:bg-red-50"
+                                    >
                                         <Trash2 size={16} />
                                         Delete Account
                                     </button>
@@ -456,13 +468,12 @@ export default function SettingsPage() {
                         </div>
 
                         {/* SAVE STATUS */}
-                        <div className="flex items-center gap-2 pb-6 text-sm text-slate-500">
+                        <div className="flex items-center gap-2 pb-6 text-sm text-slate-500" role="status" aria-live="polite">
                             <Check size={16} className="text-green-600" />
-                            Your settings are saved automatically.
+                            {notice || "Notification choices are stored for this browser session."}
                         </div>
                     </div>
-                </section>
-            </main>
-        </div>
+            </section>
+        </AppShell>
     );
 }

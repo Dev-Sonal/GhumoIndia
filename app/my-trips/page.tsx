@@ -1,5 +1,5 @@
-import Sidebar from "@/components/sidebar";
-import Header from "@/components/header";
+import AppShell from "@/components/app-shell";
+import Link from "next/link";
 import {
     CalendarDays,
     MapPin,
@@ -24,14 +24,8 @@ export default function MyTripsPage() {
     ];
 
     return (
-        <div className="flex min-h-screen bg-slate-50">
-
-            <Sidebar />
-
-            <main className="min-w-0 flex-1">
-                <Header />
-
-                <section className="p-4 md:p-6 lg:p-8">
+        <AppShell>
+            <section className="p-4 md:p-6 lg:p-8">
 
                     {/* PAGE HEADER */}
                     <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -59,10 +53,10 @@ export default function MyTripsPage() {
                         </div>
 
                         {/* PLAN NEW TRIP */}
-                        <button className="flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700">
+                        <Link href="/dashboard#trip-options" className="flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700">
                             <Plus size={18} />
                             Plan New Trip
-                        </button>
+                        </Link>
                     </div>
 
                     {/* TRIP SUMMARY */}
@@ -221,17 +215,16 @@ export default function MyTripsPage() {
                                     </div>
 
                                     {/* CONTINUE BUTTON */}
-                                    <button className="mt-5 flex w-full items-center justify-center gap-2 rounded-lg bg-slate-800 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-700">
+                                    <Link href="/dashboard" className="mt-5 flex w-full items-center justify-center gap-2 rounded-lg bg-slate-800 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-700">
                                         Continue Planning
                                         <ArrowRight size={17} />
-                                    </button>
+                                    </Link>
                                 </div>
                             ))}
                         </div>
                     </div>
 
-                </section>
-            </main>
-        </div>
+            </section>
+        </AppShell>
     );
 }

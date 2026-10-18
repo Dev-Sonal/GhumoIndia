@@ -1,5 +1,4 @@
-import Sidebar from "@/components/sidebar";
-import Header from "@/components/header";
+import AppShell from "@/components/app-shell";
 import {
     Plane,
     Train,
@@ -16,16 +15,8 @@ import {
 
 export default function TransportPage() {
     return (
-        <div className="flex min-h-screen bg-slate-50">
-
-            {/* Sidebar */}
-            <Sidebar />
-
-            {/* Main Content */}
-            <main className="min-w-0 flex-1">
-                <Header />
-
-                <section className="p-4 md:p-6 lg:p-8">
+        <AppShell>
+            <section className="p-4 md:p-6 lg:p-8">
 
                     {/* Page Heading */}
                     <div>
@@ -434,8 +425,7 @@ export default function TransportPage() {
                         </div>
                     </div>
 
-                </section>
-            </main>
-        </div>
+            </section>
+        </AppShell>
     );
 }

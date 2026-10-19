@@ -277,7 +277,8 @@ export default function Header({ onMenuClick }: HeaderProps) {
                                     label="From"
                                     value={draftTripDetails.origin}
                                     placeholder="e.g. Bengaluru"
-                                    onChange={(value) => setDraftTripDetails((current) => ({ ...current, origin: value }))}
+                                    onChange={(value) => setDraftTripDetails((current) => ({ ...current, origin: value, originCoordinates: null }))}
+                                    onSelect={({ coordinates }) => setDraftTripDetails((current) => ({ ...current, originCoordinates: coordinates }))}
                                     inputClassName="mt-1.5 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                                     dropdownClassName="left-0 right-0 z-[100] mt-2"
                                 />
@@ -287,7 +288,8 @@ export default function Header({ onMenuClick }: HeaderProps) {
                                     label="To"
                                     value={draftTripDetails.destination}
                                     placeholder="e.g. Goa"
-                                    onChange={(value) => setDraftTripDetails((current) => ({ ...current, destination: value }))}
+                                    onChange={(value) => setDraftTripDetails((current) => ({ ...current, destination: value, destinationCoordinates: null }))}
+                                    onSelect={({ coordinates }) => setDraftTripDetails((current) => ({ ...current, destinationCoordinates: coordinates }))}
                                     inputClassName="mt-1.5 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                                     dropdownClassName="left-0 right-0 z-[100] mt-2"
                                 />

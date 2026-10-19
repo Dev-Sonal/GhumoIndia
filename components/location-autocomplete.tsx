@@ -2,19 +2,17 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { searchLocationSuggestions } from "@/lib/location-search";
+import type { LocationSuggestion } from "@/lib/travel-types";
 
-type LocationSuggestion = {
-    id: string;
-    name: string;
-    label: string;
-    type?: string;
-};
+type Coordinates = { lat: number; lon: number };
 
 type LocationAutocompleteProps = {
     label: string;
     value: string;
     placeholder?: string;
     onChange: (value: string) => void;
+    onSelect?: (selection: { name: string; coordinates: Coordinates | null }) => void;
     inputClassName?: string;
     dropdownClassName?: string;
 };
@@ -24,6 +22,7 @@ export default function LocationAutocomplete({
     value,
     placeholder = "Search for a city or place",
     onChange,
+    onSelect,
     inputClassName,
 }: LocationAutocompleteProps) {
     const inputId = useId();
@@ -31,6 +30,7 @@ export default function LocationAutocomplete({
     const [suggestions, setSuggestions] = useState<LocationSuggestion[]>([]);
     const [isOpen, setIsOpen] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
+    const [hasSearched, setHasSearched] = useState(false);
     const [searchError, setSearchError] = useState("");
     const [mounted, setMounted] = useState(false);
     const [dropdownRect, setDropdownRect] = useState({ left: 0, top: 0, width: 320 });
@@ -67,6 +67,7 @@ export default function LocationAutocomplete({
         if (!isOpen || query.length < 2) {
             setSuggestions([]);
             setIsLoading(false);
+            setHasSearched(false);
             setSearchError("");
             return;
         }
@@ -74,73 +75,16 @@ export default function LocationAutocomplete({
         const controller = new AbortController();
         const timeoutId = window.setTimeout(async () => {
             setIsLoading(true);
+            setHasSearched(false);
             setSearchError("");
 
             try {
-                const params = new URLSearchParams({ q: query, limit: "8", lang: "en" });
-                const response = await fetch(`https://photon.komoot.io/api/?${params.toString()}`, {
-                    signal: controller.signal,
-                });
-                if (!response.ok) throw new Error("Location search is temporarily unavailable.");
-
-                const result = (await response.json()) as {
-                    features?: Array<{
-                        properties?: {
-                            osm_id?: number;
-                            name?: string;
-                            city?: string;
-                            town?: string;
-                            village?: string;
-                            state?: string;
-                            country?: string;
-                            type?: string;
-                        };
-                    }>;
-                };
-
-                const unique = new Map<string, LocationSuggestion>();
-                for (const feature of result.features ?? []) {
-                    const p = feature.properties;
-                    const name = p?.name ?? p?.city ?? p?.town ?? p?.village;
-                    if (!name) continue;
-
-                    const locality = p?.city ?? p?.town ?? p?.village;
-                    const parts = [name];
-                    if (locality && locality.toLowerCase() !== name.toLowerCase()) parts.push(locality);
-                    if (p?.state && !parts.some((part) => part.toLowerCase() === p.state?.toLowerCase())) {
-                        parts.push(p.state);
-                    }
-                    if (p?.country) parts.push(p.country);
-
-                    const fullLabel = [...new Set(parts)].join(", ");
-                    const key = fullLabel.toLowerCase();
-                    if (!unique.has(key)) {
-                        unique.set(key, {
-                            id: `${p?.osm_id ?? key}-${key}`,
-                            name,
-                            label: fullLabel,
-                            type: p?.type,
-                        });
-                    }
-                }
-
-                const q = query.toLocaleLowerCase();
-                const ranked = Array.from(unique.values()).sort((a, b) => {
-                    const score = (item: LocationSuggestion) => {
-                        const n = item.name.toLocaleLowerCase();
-                        const full = item.label.toLocaleLowerCase();
-                        if (n === q) return 0;
-                        if (n.startsWith(q)) return 1;
-                        if (full.startsWith(q)) return 2;
-                        if (n.includes(q)) return 3;
-                        return 4;
-                    };
-                    return score(a) - score(b);
-                });
-                setSuggestions(ranked.slice(0, 8));
+                setSuggestions(await searchLocationSuggestions(query, controller.signal, 8));
+                setHasSearched(true);
             } catch (error) {
                 if (error instanceof Error && error.name !== "AbortError") {
                     setSuggestions([]);
+                    setHasSearched(true);
                     setSearchError("Could not load suggestions. Check your internet connection or try again.");
                 }
             } finally {
@@ -155,15 +99,16 @@ export default function LocationAutocomplete({
     }, [value, isOpen]);
 
     const selectSuggestion = (suggestion: LocationSuggestion) => {
-        // Keep only the main place name in trip details.
+        // Update the text and coordinates through the callbacks expected by Header.
         onChange(suggestion.name);
+        onSelect?.({ name: suggestion.name, coordinates: suggestion.coordinates });
         setSuggestions([]);
         setIsOpen(false);
         setSearchError("");
     };
 
     const dropdown = mounted && isOpen && value.trim().length >= 2 &&
-        (suggestions.length > 0 || searchError) ? createPortal(
+        (suggestions.length > 0 || searchError || (hasSearched && !isLoading)) ? createPortal(
         <div
             role="listbox"
             className="max-h-64 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 text-slate-800 shadow-2xl"
@@ -193,6 +138,9 @@ export default function LocationAutocomplete({
                 </button>
             ))}
             {searchError && <p className="px-3 py-2 text-xs text-amber-700">{searchError}</p>}
+            {!searchError && hasSearched && suggestions.length === 0 && (
+                <p className="px-3 py-2 text-xs text-slate-600">No locations found. Try a city name, e.g. Bengaluru or Ooty.</p>
+            )}
         </div>,
         document.body
     ) : null;
@@ -215,6 +163,7 @@ export default function LocationAutocomplete({
                 }}
                 onChange={(event) => {
                     onChange(event.target.value);
+                    // Header clears the old coordinates while the user edits the text.
                     setIsOpen(true);
                     window.requestAnimationFrame(updateDropdownPosition);
                 }}

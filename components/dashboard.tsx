@@ -13,12 +13,9 @@ import {
     BadgeIndianRupee,
     Star,
     Crown,
-    CloudSun,
-    CloudRain,
-    Camera,
+
     Utensils,
-    Landmark,
-    ShoppingBag,
+
     Palmtree,
     ChevronRight,
     ChevronDown,
@@ -33,8 +30,7 @@ import {
     Plane,
     BedDouble,
     Wallet,
-    Church,
-    ShipWheel,
+
     Map,
     Hotel,
     Soup,
@@ -42,18 +38,39 @@ import {
     Bike,
 } from "lucide-react";
 
+type LiveNearbyPlace = {
+    id: string;
+    name: string;
+    distance: string;
+    duration: string;
+    recommendation: string;
+    lat: number;
+    lon: number;
+};
+
+type DestinationImage = {
+    url: string;
+    title: string;
+    description: string;
+    author: string;
+    license: string;
+    filePageUrl: string;
+};
+
 export default function Dashboard() {
     // =========================================================
     // STATES
     // =========================================================
 
     const [tripDetails, setTripDetails] = useState(defaultTripDetails);
-    const destinationKey = tripDetails.destination.trim().toLowerCase();
-    const isGoa = destinationKey === "goa";
-    const isRanchi = destinationKey === "ranchi";
-    const hasDestinationData = isGoa || isRanchi;
+    const [destinationImage, setDestinationImage] = useState<DestinationImage | null>(null);
+    const [liveNearbyPlaces, setLiveNearbyPlaces] = useState<LiveNearbyPlace[]>([]);
+    const [nearbyLoading, setNearbyLoading] = useState(false);
+    const [nearbyError, setNearbyError] = useState("");
     const [selectedStyle, setSelectedStyle] = useState("Recommended");
     const [selectedDuration, setSelectedDuration] = useState(defaultTripDetails.duration);
+    const [destinationSummary, setDestinationSummary] = useState<{ text: string; title: string; url: string } | null>(null);
+    const [destinationSummaryLoading, setDestinationSummaryLoading] = useState(false);
 
     const applySavedTripDetails = () => {
         const savedTrip = getTripDetails();
@@ -87,6 +104,320 @@ export default function Dashboard() {
             window.removeEventListener("focus", handleTripDetailsUpdated);
         };
     }, []);
+
+    // Load a general destination overview dynamically instead of relying on city-specific hard-coded data.
+    // Wikipedia is used for descriptive context only; it is not treated as a source for live prices or seasonal advice.
+    useEffect(() => {
+        const destination = tripDetails.destination.trim();
+        if (!destination) {
+            setDestinationSummary(null);
+            setDestinationSummaryLoading(false);
+            return;
+        }
+
+        const controller = new AbortController();
+        setDestinationSummary(null);
+        setDestinationSummaryLoading(true);
+
+        const loadDestinationSummary = async () => {
+            try {
+                const searchParams = new URLSearchParams({
+                    action: "query",
+                    list: "search",
+                    srsearch: `${destination} India`,
+                    srlimit: "1",
+                    format: "json",
+                    origin: "*",
+                });
+                const searchResponse = await fetch(
+                    `https://en.wikipedia.org/w/api.php?${searchParams.toString()}`,
+                    { signal: controller.signal },
+                );
+                if (!searchResponse.ok) throw new Error("Destination search failed");
+                const searchData = await searchResponse.json() as {
+                    query?: { search?: Array<{ title?: string }> };
+                };
+                const title = searchData.query?.search?.[0]?.title;
+                if (!title) {
+                    setDestinationSummary(null);
+                    return;
+                }
+
+                const summaryResponse = await fetch(
+                    `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`,
+                    { signal: controller.signal },
+                );
+                if (!summaryResponse.ok) throw new Error("Destination overview unavailable");
+                const summaryData = await summaryResponse.json() as {
+                    extract?: string;
+                    type?: string;
+                    title?: string;
+                    content_urls?: { desktop?: { page?: string } };
+                };
+                const extract = summaryData.type !== "disambiguation" ? (summaryData.extract ?? "") : "";
+                setDestinationSummary(extract ? {
+                    text: extract,
+                    title: summaryData.title ?? title,
+                    url: summaryData.content_urls?.desktop?.page
+                        ?? `https://en.wikipedia.org/wiki/${encodeURIComponent((summaryData.title ?? title).replace(/ /g, "_"))}`,
+                } : null);
+            } catch (error) {
+                if (!(error instanceof Error && error.name === "AbortError")) {
+                    setDestinationSummary(null);
+                }
+            } finally {
+                if (!controller.signal.aborted) setDestinationSummaryLoading(false);
+            }
+        };
+
+        void loadDestinationSummary();
+        return () => controller.abort();
+    }, [tripDetails.destination]);
+
+    // Load a destination-specific image from the Pilgora API.
+    useEffect(() => {
+        const destination = tripDetails.destination.trim();
+
+        if (!destination) {
+            setDestinationImage(null);
+            return;
+        }
+
+        const controller = new AbortController();
+
+        const loadDestinationImage = async () => {
+            setDestinationImage(null);
+
+            try {
+                const params = new URLSearchParams({ destination });
+                const response = await fetch(
+                    `/api/destination-image?${params.toString()}`,
+                    { signal: controller.signal },
+                );
+
+                if (!response.ok) {
+                    throw new Error(`Destination image request failed: ${response.status}`);
+                }
+
+                const data = await response.json() as {
+                    image: DestinationImage | null;
+                    reason?: string;
+                };
+
+                if (controller.signal.aborted) return;
+
+                const image = data.image;
+                const validImage =
+                    image !== null &&
+                    typeof image?.url === "string" &&
+                    image.url.startsWith("https://upload.wikimedia.org/") &&
+                    typeof image.filePageUrl === "string" &&
+                    image.filePageUrl.startsWith("https://commons.wikimedia.org/wiki/File:");
+
+                setDestinationImage(validImage ? image : null);
+
+                if (!validImage && data.reason) {
+                    console.info("Destination image unavailable:", data.reason);
+                }
+            } catch (error) {
+                if (error instanceof Error && error.name !== "AbortError") {
+                    console.error("Unable to load destination image:", error);
+                }
+
+                if (!controller.signal.aborted) {
+                    setDestinationImage(null);
+                }
+            } finally {
+                if (!controller.signal.aborted) {
+                        }
+            }
+        };
+
+        void loadDestinationImage();
+        return () => controller.abort();
+    }, [tripDetails.destination]);
+
+    // Load real nearby attractions from OpenStreetMap when selected destination coordinates exist.
+    useEffect(() => {
+        const coordinates = tripDetails.destinationCoordinates;
+        if (!coordinates || !Number.isFinite(coordinates.lat) || !Number.isFinite(coordinates.lon)) {
+            setLiveNearbyPlaces([]);
+            setNearbyLoading(false);
+            setNearbyError("");
+            return;
+        }
+
+        const controller = new AbortController();
+        const radiusMeters = 50000;
+        const query = `
+[out:json][timeout:20];
+(
+  node(around:${radiusMeters},${coordinates.lat},${coordinates.lon})[tourism~"^(attraction|museum|viewpoint|zoo|theme_park|gallery)$"];
+  way(around:${radiusMeters},${coordinates.lat},${coordinates.lon})[tourism~"^(attraction|museum|viewpoint|zoo|theme_park|gallery)$"];
+  relation(around:${radiusMeters},${coordinates.lat},${coordinates.lon})[tourism~"^(attraction|museum|viewpoint|zoo|theme_park|gallery)$"];
+  node(around:${radiusMeters},${coordinates.lat},${coordinates.lon})[historic~"^(monument|castle|fort|ruins|memorial|archaeological_site)$"];
+  way(around:${radiusMeters},${coordinates.lat},${coordinates.lon})[historic~"^(monument|castle|fort|ruins|memorial|archaeological_site)$"];
+  node(around:${radiusMeters},${coordinates.lat},${coordinates.lon})[natural~"^(beach|waterfall|cave|hot_spring)$"];
+  way(around:${radiusMeters},${coordinates.lat},${coordinates.lon})[natural~"^(beach|waterfall|cave|hot_spring)$"];
+  node(around:${radiusMeters},${coordinates.lat},${coordinates.lon})[leisure~"^(park|garden|nature_reserve)$"];
+  way(around:${radiusMeters},${coordinates.lat},${coordinates.lon})[leisure~"^(park|garden|nature_reserve)$"];
+);
+out center tags;
+`;
+
+        const distanceKm = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+            const toRadians = (degrees: number) => degrees * Math.PI / 180;
+            const dLat = toRadians(lat2 - lat1);
+            const dLon = toRadians(lon2 - lon1);
+            const a =
+                Math.sin(dLat / 2) ** 2 +
+                Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) * Math.sin(dLon / 2) ** 2;
+            return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        };
+
+        const loadNearbyPlaces = async () => {
+            setNearbyLoading(true);
+            setNearbyError("");
+            setLiveNearbyPlaces([]);
+
+            try {
+                // Overpass instances can temporarily return 502/503/504. Try a
+                // secondary public instance before showing the error state.
+                const endpoints = [
+                    "https://overpass-api.de/api/interpreter",
+                    "https://overpass.kumi.systems/api/interpreter",
+                ];
+                let data: {
+                    elements?: Array<{
+                        type: string;
+                        id: number;
+                        lat?: number;
+                        lon?: number;
+                        center?: { lat: number; lon: number };
+                        tags?: Record<string, string>;
+                    }>;
+                } | null = null;
+                let lastError: Error | null = null;
+
+                for (const endpoint of endpoints) {
+                    if (controller.signal.aborted) throw new DOMException("Request aborted", "AbortError");
+                    try {
+                        const response = await fetch(endpoint, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
+                            body: new URLSearchParams({ data: query }).toString(),
+                            signal: controller.signal,
+                        });
+
+                        if (!response.ok) {
+                            const error = new Error(`Nearby places service returned ${response.status}.`);
+                            // Retry only on temporary server/rate-limit responses. Other
+                            // 4xx errors usually indicate a query/request problem.
+                            if ([429, 502, 503, 504].includes(response.status)) {
+                                lastError = error;
+                                continue;
+                            }
+                            throw error;
+                        }
+
+                        data = await response.json() as {
+                            elements?: Array<{
+                                type: string;
+                                id: number;
+                                lat?: number;
+                                lon?: number;
+                                center?: { lat: number; lon: number };
+                                tags?: Record<string, string>;
+                            }>;
+                        };
+                        break;
+                    } catch (error) {
+                        if (error instanceof Error && error.name === "AbortError") throw error;
+                        lastError = error instanceof Error ? error : new Error("Unknown nearby places error.");
+                        // Network/CORS errors may be endpoint-specific, so try the next instance.
+                    }
+                }
+
+                if (!data) throw lastError ?? new Error("All nearby places services failed.");
+
+                const candidates: Array<LiveNearbyPlace & { distanceValue: number }> = [];
+
+                for (const element of data.elements ?? []) {
+                    const tags = element.tags ?? {};
+                    const name = tags.name?.trim();
+                    const lat = element.lat ?? element.center?.lat;
+                    const lon = element.lon ?? element.center?.lon;
+                    if (!name || lat === undefined || lon === undefined ||
+                        !Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+
+                    // Avoid ordinary commercial places even if their map data
+                    // accidentally includes a tourism tag.
+                    const building = tags.building?.toLowerCase();
+                    if (
+                        tags.shop ||
+                        tags.office ||
+                        tags.craft ||
+                        ["commercial", "retail", "office", "industrial"].includes(building ?? "")
+                    ) continue;
+
+                    const category = tags.tourism ?? tags.historic ?? tags.natural ?? tags.leisure ?? "attraction";
+                    const distance = distanceKm(coordinates.lat, coordinates.lon, lat, lon);
+                    if (!Number.isFinite(distance) || distance > radiusMeters / 1000) continue;
+
+                    candidates.push({
+                        id: `${element.type}-${element.id}`,
+                        name,
+                        distance: `${distance.toFixed(distance < 10 ? 1 : 0)} km away`,
+                        duration: "Straight-line distance",
+                        recommendation: category.replaceAll("_", " "),
+                        lat,
+                        lon,
+                        distanceValue: distance,
+                    });
+                }
+
+                // Sort before deduplication so the nearest mapped version is kept.
+                candidates.sort((a, b) => a.distanceValue - b.distanceValue);
+                const places: LiveNearbyPlace[] = [];
+                const seenIds = new Set<string>();
+                const seenNamedLocations: Array<{ name: string; lat: number; lon: number }> = [];
+
+                for (const place of candidates) {
+                    if (seenIds.has(place.id)) continue;
+                    seenIds.add(place.id);
+
+                    const normalizedName = place.name.toLocaleLowerCase().replace(/\\s+/g, " ").trim();
+                    const duplicateNearby = seenNamedLocations.some((existing) => {
+                        if (existing.name !== normalizedName) return false;
+                        return distanceKm(existing.lat, existing.lon, place.lat, place.lon) < 0.25;
+                    });
+                    if (duplicateNearby) continue;
+
+                    seenNamedLocations.push({ name: normalizedName, lat: place.lat, lon: place.lon });
+                    places.push({
+                        id: place.id,
+                        name: place.name,
+                        distance: place.distance,
+                        duration: place.duration,
+                        recommendation: place.recommendation,
+                        lat: place.lat,
+                        lon: place.lon,
+                    });
+                }
+
+                setLiveNearbyPlaces(places.slice(0, 30));
+            } catch (error) {
+                if (error instanceof Error && error.name !== "AbortError") {
+                    setNearbyError("Nearby places could not be loaded right now. Please try again later.");
+                }
+            } finally {
+                if (!controller.signal.aborted) setNearbyLoading(false);
+            }
+        };
+
+        void loadNearbyPlaces();
+        return () => controller.abort();
+    }, [tripDetails.destinationCoordinates?.lat, tripDetails.destinationCoordinates?.lon]);
 
     const updateSelectedDuration = (duration: string) => {
         setSelectedDuration(duration);
@@ -188,161 +519,360 @@ export default function Dashboard() {
     // Base recommended costs
     // =========================================================
 
+    // These are illustrative baseline estimates, not live quotes.
+    // Keep them destination-independent until a route/cost data provider is connected.
     const tripDurations = [
-        { days: "2 Days", baseCost: isRanchi ? 4200 : 6000, description: "Short getaway", recommended: false },
-        { days: "3 Days", baseCost: isRanchi ? 5600 : 8000, description: "Quick trip - cover highlights", recommended: false },
-        { days: "4 Days", baseCost: isRanchi ? 7600 : 11000, description: "Perfect balance", recommended: true },
-        { days: "5 Days", baseCost: isRanchi ? 9300 : 13500, description: "More time to explore", recommended: false },
-        { days: "7 Days", baseCost: isRanchi ? 12500 : 18000, description: "A relaxed week-long trip", recommended: false },
+        { days: "2 Days", baseCost: 6000, description: "Short getaway", recommended: false },
+        { days: "3 Days", baseCost: 8000, description: "Quick trip - cover highlights", recommended: false },
+        { days: "4 Days", baseCost: 11000, description: "Perfect balance", recommended: true },
+        { days: "5 Days", baseCost: 13500, description: "More time to explore", recommended: false },
+        { days: "7 Days", baseCost: 18000, description: "A relaxed week-long trip", recommended: false },
     ];
 
-    // =========================================================
-    // BEST TIME DATA
-    // =========================================================
+    // Destination guidance is fetched from public geographic/weather sources at runtime.
+    // No city-name allowlist is used. Facts that a source does not provide stay unavailable.
+    type DynamicSeason = {
+        title: string; months: string; description: string;
+        icon: typeof Sun; iconClass: string; monthClass: string;
+    };
+    type DynamicGuide = {
+        seasons: DynamicSeason[];
+        highlights: Array<{ title: string; icon: typeof Palmtree }>;
+        transport: Array<{ title: string; subtitle: string; price: string; duration: string; icon: typeof Train; recommended: boolean }>;
+        stays: Array<{ name: string; description: string; price: string; image: string; recommended: boolean }>;
+        foods: string[];
+    };
+    const [dynamicGuide, setDynamicGuide] = useState<DynamicGuide | null>(null);
+    const [guideLoading, setGuideLoading] = useState(false);
+    const destinationKey = tripDetails.destination.trim().toLowerCase();
 
-    const bestTimes = isRanchi
+    useEffect(() => {
+        const destination = tripDetails.destination.trim();
+        const coordinates = tripDetails.destinationCoordinates;
+        if (!destination) {
+            setDynamicGuide(null);
+            return;
+        }
+
+        const controller = new AbortController();
+        const loadGuide = async () => {
+            setGuideLoading(true);
+            setDynamicGuide(null);
+            try {
+                let lat = coordinates?.lat;
+                let lon = coordinates?.lon;
+
+                // Resolve manually typed destinations too; autocomplete is not mandatory.
+                if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+                    const geoUrl = new URL("https://nominatim.openstreetmap.org/search");
+                    geoUrl.search = new URLSearchParams({
+                        q: `${destination}, India`,
+                        format: "jsonv2",
+                        limit: "1",
+                        addressdetails: "1",
+                    }).toString();
+                    const geoResponse = await fetch(geoUrl.toString(), {
+                        signal: controller.signal,
+                        headers: { Accept: "application/json" },
+                    });
+                    if (geoResponse.ok) {
+                        const geo = await geoResponse.json() as Array<{ lat?: string; lon?: string; display_name?: string }>;
+                        const match = geo[0];
+                        if (match?.lat && match?.lon) {
+                            lat = Number(match.lat);
+                            lon = Number(match.lon);
+                            setTripDetails((current) => {
+                                if (current.destination.trim().toLowerCase() !== destination.toLowerCase()) return current;
+                                const updated = { ...current, destinationCoordinates: { lat: Number(lat), lon: Number(lon) } };
+                                try { saveTripDetails(updated); } catch (error) { console.error("Unable to save destination coordinates:", error); }
+                                return updated;
+                            });
+                        }
+                    }
+                }
+
+                if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+                    setDynamicGuide({
+                        seasons: [],
+                        highlights: [],
+                        transport: [],
+                        stays: [],
+                        foods: [],
+                    });
+                    return;
+                }
+
+                const [weatherResult, mapResult] = await Promise.allSettled([
+                    (async () => {
+                        // Recent historical climate provides an estimate, not a forecast.
+                        const url = new URL("https://archive-api.open-meteo.com/v1/archive");
+                        url.search = new URLSearchParams({
+                            latitude: String(lat),
+                            longitude: String(lon),
+                            start_date: `${new Date().getFullYear() - 3}-01-01`,
+                            end_date: `${new Date().getFullYear() - 1}-12-31`,
+                            daily: "temperature_2m_mean,precipitation_sum",
+                            timezone: "auto",
+                        }).toString();
+                        const response = await fetch(url.toString(), { signal: controller.signal });
+                        if (!response.ok) throw new Error("Climate history unavailable");
+                        return await response.json() as {
+                            daily?: { time?: string[]; temperature_2m_mean?: Array<number | null>; precipitation_sum?: Array<number | null> };
+                        };
+                    })(),
+                    (async () => {
+                        const query = `
+[out:json][timeout:20];
+(
+  node(around:12000,${lat},${lon})[tourism~"^(attraction|museum|viewpoint|zoo|theme_park|gallery|hotel|hostel|guest_house|motel|apartment|chalet|camp_site)$"];
+  way(around:12000,${lat},${lon})[tourism~"^(attraction|museum|viewpoint|zoo|theme_park|gallery|hotel|hostel|guest_house|motel|apartment|chalet|camp_site)$"];
+  node(around:12000,${lat},${lon})[historic~"^(monument|castle|fort|ruins|memorial|archaeological_site)$"];
+  way(around:12000,${lat},${lon})[historic~"^(monument|castle|fort|ruins|memorial|archaeological_site)$"];
+  node(around:12000,${lat},${lon})[natural~"^(beach|waterfall|cave|hot_spring)$"];
+  way(around:12000,${lat},${lon})[natural~"^(beach|waterfall|cave|hot_spring)$"];
+  node(around:12000,${lat},${lon})[leisure~"^(park|garden|nature_reserve)$"];
+  way(around:12000,${lat},${lon})[leisure~"^(park|garden|nature_reserve)$"];
+  node(around:12000,${lat},${lon})[amenity~"^(restaurant|food_court|cafe)$"];
+  way(around:12000,${lat},${lon})[amenity~"^(restaurant|food_court|cafe)$"];
+  node(around:30000,${lat},${lon})[railway~"^(station|halt)$"];
+  node(around:30000,${lat},${lon})[amenity~"^(bus_station|ferry_terminal)$"];
+  node(around:30000,${lat},${lon})[aeroway="aerodrome"];
+);
+out center tags;
+`;
+                        const endpoints = [
+                            "https://overpass-api.de/api/interpreter",
+                            "https://overpass.kumi.systems/api/interpreter",
+                        ];
+                        let lastError: unknown;
+                        for (const endpoint of endpoints) {
+                            try {
+                                const response = await fetch(endpoint, {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
+                                    body: new URLSearchParams({ data: query }).toString(),
+                                    signal: controller.signal,
+                                });
+                                if (!response.ok) throw new Error(`Map service returned ${response.status}`);
+                                return await response.json() as { elements?: Array<{ tags?: Record<string, string> }> };
+                            } catch (error) {
+                                if (error instanceof Error && error.name === "AbortError") throw error;
+                                lastError = error;
+                            }
+                        }
+                        throw lastError ?? new Error("Map data unavailable");
+                    })(),
+                ]);
+
+                const seasons: DynamicSeason[] = [];
+                if (weatherResult.status === "fulfilled") {
+                    const daily = weatherResult.value.daily;
+                    const monthly: Array<{ month: number; tempTotal: number; tempCount: number; rainTotal: number; rainCount: number }> =
+                        Array.from({ length: 12 }, (_, index) => ({ month: index + 1, tempTotal: 0, tempCount: 0, rainTotal: 0, rainCount: 0 }));
+                    (daily?.time ?? []).forEach((date, index) => {
+                        const month = Number(date.slice(5, 7)) - 1;
+                        const temp = daily?.temperature_2m_mean?.[index];
+                        const rain = daily?.precipitation_sum?.[index];
+                        if (monthly[month] && typeof temp === "number" && Number.isFinite(temp)) {
+                            monthly[month].tempTotal += temp;
+                            monthly[month].tempCount += 1;
+                        }
+                        if (monthly[month] && typeof rain === "number" && Number.isFinite(rain)) {
+                            monthly[month].rainTotal += rain;
+                            monthly[month].rainCount += 1;
+                        }
+                    });
+                    const ranked = monthly
+                        .filter((month) => month.tempCount && month.rainCount)
+                        .map((month) => ({
+                            ...month,
+                            averageTemp: month.tempTotal / month.tempCount,
+                            averageRain: month.rainTotal / month.rainCount,
+                        }));
+                    if (ranked.length) {
+                        const score = (item: typeof ranked[number]) =>
+                            Math.abs(item.averageTemp - 22) + item.averageRain * 0.08;
+                        const rankedByComfort = [...ranked].sort((a, b) => score(a) - score(b));
+                        const best = rankedByComfort.slice(0, 4).sort((a, b) => a.month - b.month);
+                        const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+                        const monthsLabel = (items: typeof ranked) =>
+                            items.map((item) => monthNames[item.month - 1]).join(", ");
+
+                        seasons.push({
+                            title: "Best experience",
+                            months: monthsLabel(best),
+                            description: "Climate-based estimate using historical temperature and rainfall, not a forecast. Check weather and local advisories before travelling.",
+                            icon: Sun,
+                            iconClass: "text-amber-500",
+                            monthClass: "text-green-700",
+                        });
+
+                        const valueMonths = rankedByComfort
+                            .slice(4, 7)
+                            .sort((a, b) => a.month - b.month);
+                        if (valueMonths.length) {
+                            seasons.push({
+                                title: "Best value (climate estimate)",
+                                months: monthsLabel(valueMonths),
+                                description: "A possible alternative to the mildest months based on climate only. Accommodation and transport prices are not included.",
+                                icon: BadgeIndianRupee,
+                                iconClass: "text-emerald-600",
+                                monthClass: "text-emerald-700",
+                            });
+                        }
+
+                        seasons.push({
+                            title: "Cheapest time",
+                            months: "Price data unavailable",
+                            description: "Live or historical travel-price data is not connected, so the cheapest months cannot be verified.",
+                            icon: Wallet,
+                            iconClass: "text-orange-500",
+                            monthClass: "text-orange-700",
+                        });
+                    }
+                }
+
+                const tags = mapResult.status === "fulfilled"
+                    ? (mapResult.value.elements ?? []).map((element) => element.tags ?? {})
+                    : [];
+                const stays = tags
+                    .filter((tag) => tag.name && ["hotel", "hostel", "guest_house", "motel", "apartment", "chalet", "camp_site"].includes(tag.tourism ?? ""))
+                    .map((tag, index) => ({
+                        name: tag.name!,
+                        description: `${tag.tourism?.replaceAll("_", " ")} listed in OpenStreetMap near ${destination}. Verify location, reviews, availability and rates.`,
+                        price: "Check current rates",
+                        image: "",
+                        recommended: index === 0,
+                    }))
+                    .filter((item, index, all) => all.findIndex((other) => other.name.toLowerCase() === item.name.toLowerCase()) === index)
+                    .slice(0, 5);
+
+                const foods = [...new Set(tags
+                    .filter((tag) => tag.amenity && ["restaurant", "food_court", "cafe"].includes(tag.amenity) && tag.cuisine)
+                    .map((tag) => tag.cuisine!.split(";").map((value) => value.trim()).filter(Boolean))
+                    .flat()
+                    .filter(Boolean))].slice(0, 8);
+
+                const transitTypes = [...new Set(tags.map((tag) => {
+                    if (tag.railway === "station" || tag.railway === "halt") return "Railway station";
+                    if (tag.amenity === "bus_station") return "Bus station";
+                    if (tag.amenity === "ferry_terminal") return "Ferry terminal";
+                    if (tag.aeroway === "aerodrome") return "Airport";
+                    return "";
+                }).filter(Boolean))];
+                const transport: DynamicGuide["transport"] = transitTypes.slice(0, 3).map((type, index) => ({
+                    title: index === 0 ? "Mapped local option" : type,
+                    subtitle: type,
+                    price: "Check operator for current fares",
+                    duration: "Depends on route",
+                    icon: type === "Airport" ? Plane : type === "Railway station" ? Train : type === "Bus station" ? Bus : Car,
+                    recommended: index === 0,
+                }));
+                // Always show route-neutral options, but clearly label them as suggestions rather than live availability.
+                if (!transport.length) {
+                    transport.push(
+                        { title: "Public transport", subtitle: "Bus / train where available", price: "Check operator fares", duration: "Route dependent", icon: Train, recommended: true },
+                        { title: "Local transfer", subtitle: "Taxi / cab", price: "Check local rates", duration: "Route dependent", icon: Car, recommended: false },
+                    );
+                }
+
+                const attractionTags = tags.filter((tag) =>
+                    Boolean(tag.name) && (
+                        (tag.tourism && ["attraction", "museum", "viewpoint", "gallery", "zoo", "theme_park"].includes(tag.tourism)) ||
+                        Boolean(tag.historic) || Boolean(tag.natural) ||
+                        ["park", "garden", "nature_reserve"].includes(tag.leisure ?? "")
+                    )
+                );
+                const attractionNames = [...new Set(attractionTags.map((tag) => tag.name!.trim()))].slice(0, 3);
+
+                // Keep highlights useful: prioritize actual named places and only show categories
+                // when there is no reliable destination-specific listing for that category.
+                const highlights: DynamicGuide["highlights"] = [];
+                attractionNames.forEach((name) => highlights.push({ title: name, icon: MapPin }));
+                if (foods.length) {
+                    highlights.push({ title: `Food and cafés: ${foods.slice(0, 3).join(", ")}`, icon: Utensils });
+                }
+                if (stays.length) {
+                    highlights.push({ title: `${stays.length} accommodation listings to compare`, icon: Hotel });
+                }
+                if (transitTypes.length) {
+                    highlights.push({ title: `Transport links: ${transitTypes.slice(0, 3).join(", ")}`, icon: Train });
+                }
+                if (highlights.length < 3) {
+                    highlights.push({
+                        title: `Explore more mapped attractions around ${destination}`,
+                        icon: Palmtree,
+                    });
+                }
+                if (highlights.length < 4) {
+                    highlights.push({
+                        title: "Check opening hours, access and local weather before visiting",
+                        icon: Sun,
+                    });
+                }
+                setDynamicGuide({ seasons, highlights, transport, stays, foods });
+            } catch (error) {
+                if (!(error instanceof Error && error.name === "AbortError")) {
+                    setDynamicGuide({ seasons: [], highlights: [], transport: [], stays: [], foods: [] });
+                }
+            } finally {
+                if (!controller.signal.aborted) setGuideLoading(false);
+            }
+        };
+
+        void loadGuide();
+        return () => controller.abort();
+    }, [tripDetails.destination, tripDetails.destinationCoordinates?.lat, tripDetails.destinationCoordinates?.lon]);
+
+    const destinationGuide = dynamicGuide;
+    const bestTimes = destinationGuide?.seasons ?? [];
+    // The overview and map-based attractions stay visible for every destination.
+    const tripHighlights: Array<{ title: string; icon: typeof Palmtree }> = [];
+
+    // Reuse the live, coordinate-based attraction results for the Top Places card.
+    // This lets the feature work for any destination supported by the map data source.
+    const topPlaces = liveNearbyPlaces.slice(0, 4).map((place) => ({
+        name: place.name,
+        duration: place.distance,
+        image: "",
+    }));
+
+    const extraPlaces = liveNearbyPlaces.slice(4, 12).map((place) => ({
+        name: place.name,
+        duration: place.distance,
+        image: "",
+    }));
+
+    const nearbyPlaces = liveNearbyPlaces.map((place) => ({
+        ...place,
+        image: "",
+        icon: MapPin,
+    }));
+
+    // Generic itinerary scaffold based on attractions found near the selected destination.
+    // Travel times/opening hours are not inferred from straight-line distances.
+    const itinerary = topPlaces.length > 0
         ? [
-            { title: "Best Experience", months: "Oct - Mar", description: "Generally pleasant weather for sightseeing", icon: Sun, iconClass: "text-yellow-500", monthClass: "text-green-700" },
-            { title: "Best Value", months: "Sep - Mar", description: "Compare weekdays and local transport", icon: CloudSun, iconClass: "text-green-500", monthClass: "text-green-600" },
-            { title: "Rainy Season", months: "Jun - Sep", description: "Waterfalls are fuller; check local conditions", icon: CloudRain, iconClass: "text-red-500", monthClass: "text-red-500" },
+            {
+                day: "Day 1",
+                title: `${tripDetails.destination} highlights`,
+                short: "Choose nearby attractions based on your interests",
+                details: topPlaces.slice(0, 3).map((place) => `Consider visiting ${place.name}; verify opening hours and route before travelling`),
+            },
+            {
+                day: "Day 2",
+                title: "Explore at your own pace",
+                short: "Use nearby attractions to build your second day",
+                details: (extraPlaces.length ? extraPlaces : topPlaces).slice(0, 3).map((place) => `Consider ${place.name}; check local access and travel time before leaving`),
+            },
         ]
-        : isGoa ? [
-            { title: "Best Experience", months: "Nov - Feb", description: "Popular season for outdoor activities", icon: Sun, iconClass: "text-yellow-500", monthClass: "text-green-700" },
-            { title: "Best Value", months: "Mar - May", description: "Compare weather and accommodation rates", icon: CloudSun, iconClass: "text-green-500", monthClass: "text-green-600" },
-            { title: "Cheapest Time", months: "Jun - Sep", description: "Monsoon season; check activity availability", icon: CloudRain, iconClass: "text-red-500", monthClass: "text-red-500" },
-        ] : [];
+        : [];
 
-        // =========================================================
-    // TRIP HIGHLIGHTS
+    const transportOptions = destinationGuide?.transport ?? [];
+    const stayAreas = destinationGuide?.stays ?? [];
+    const foodItems = destinationGuide?.foods ?? [];
+
     // =========================================================
-
-    const tripHighlights = isRanchi
-        ? [
-            { title: "Waterfalls and forest scenery", icon: Palmtree },
-            { title: "Local Jharkhand cuisine", icon: Utensils },
-            { title: "Temples and cultural landmarks", icon: Landmark },
-            { title: "Rock Garden and scenic viewpoints", icon: Camera },
-            { title: "Local markets and handicrafts", icon: ShoppingBag },
-        ]
-        : isGoa ? [
-            { title: "Beaches, nightlife and water activities", icon: Palmtree },
-            { title: "Goan food and cafes", icon: Utensils },
-            { title: "Portuguese heritage and culture", icon: Landmark },
-            { title: "Scenic views and sunsets", icon: Camera },
-            { title: "Shopping and local markets", icon: ShoppingBag },
-        ] : [];
-
-        // =========================================================
-    // TOP PLACES
-    // =========================================================
-
-    const topPlaces = isRanchi
-        ? [
-            { name: "Hundru Falls", duration: "Half day", image: "" },
-            { name: "Dassam Falls", duration: "Half day", image: "" },
-            { name: "Rock Garden", duration: "1-2 hrs", image: "" },
-            { name: "Jagannath Temple", duration: "1-2 hrs", image: "" },
-        ]
-        : isGoa ? [
-            { name: "Baga Beach", duration: "3-4 hrs", image: "/images/baga-beach.jpg" },
-            { name: "Fort Aguada", duration: "1-2 hrs", image: "/images/fort-aguada.jpg" },
-            { name: "Dudhsagar Falls", duration: "1 day", image: "/images/dudhsagar-falls.jpg" },
-            { name: "Anjuna Beach", duration: "2-3 hrs", image: "/images/anjuna-beach.jpg" },
-        ] : [];
-
-    const extraPlaces = isRanchi
-        ? [
-            { name: "Tagore Hill", duration: "1-2 hrs", image: "" },
-            { name: "Pahari Mandir", duration: "1-2 hrs", image: "" },
-            { name: "Birsa Zoological Park", duration: "Half day", image: "" },
-        ]
-        : isGoa ? [
-            { name: "Chapora Fort", duration: "1-2 hrs", image: "/images/fort-aguada.jpg" },
-            { name: "Candolim Beach", duration: "2-3 hrs", image: "/images/baga-beach.jpg" },
-            { name: "Old Goa Churches", duration: "2-3 hrs", image: "/images/anjuna-beach.jpg" },
-        ] : [];
-
-        // =========================================================
-    // NEARBY PLACES
-    // =========================================================
-
-    const nearbyPlaces = isRanchi
-        ? [
-            { name: "Hundru Falls", distance: "Approx. 45 km", duration: "Check route", recommendation: "Nature", image: "", icon: MapPin },
-            { name: "Dassam Falls", distance: "Approx. 40 km", duration: "Check route", recommendation: "Nature", image: "", icon: MapPin },
-            { name: "Rock Garden", distance: "Ranchi city", duration: "Local visit", recommendation: "Sightseeing", image: "", icon: Map },
-            { name: "Jagannath Temple", distance: "Ranchi city", duration: "Local visit", recommendation: "Culture", image: "", icon: Church },
-            { name: "Tagore Hill", distance: "Ranchi city", duration: "Local visit", recommendation: "Viewpoint", image: "", icon: MapPin },
-        ]
-        : isGoa ? [
-            { name: "Dudhsagar Falls", distance: "45 km", duration: "1.5 hrs", recommendation: "Worth adding", image: "/images/dudhsagar-falls.jpg", icon: MapPin },
-            { name: "Old Goa Churches", distance: "15 km", duration: "40 mins", recommendation: "Worth adding", image: "/images/anjuna-beach.jpg", icon: Church },
-            { name: "Divar Island", distance: "32 km", duration: "1 hr", recommendation: "Good for half day", image: "/images/baga-beach.jpg", icon: ShipWheel },
-            { name: "Arambol Beach", distance: "38 km", duration: "1.5 hrs", recommendation: "Worth adding", image: "/images/anjuna-beach.jpg", icon: Palmtree },
-            { name: "Salim Ali Bird Sanctuary", distance: "28 km", duration: "50 mins", recommendation: "Nature lovers", image: "/images/dudhsagar-falls.jpg", icon: Map },
-        ] : [];
-
-        // =========================================================
-    // DAY-WISE ITINERARY
-    // =========================================================
-
-    const itinerary = isRanchi
-        ? [
-            { day: "Day 1", title: "Ranchi city", short: "Rock Garden, Tagore Hill and local food", details: ["Start with Rock Garden", "Visit Tagore Hill if time and access allow", "Explore a local market", "Try local Jharkhand cuisine"] },
-            { day: "Day 2", title: "Waterfalls and departure", short: "Choose a waterfall based on travel time", details: ["Start early for Hundru Falls or Dassam Falls", "Check weather, access and transport before leaving", "Return to Ranchi", "Depart for your return journey"] },
-            { day: "Day 3", title: "Temples and local culture", short: "Jagannath Temple and city sights", details: ["Check access details for Jagannath Temple", "Explore local food options", "Keep time for travel between locations", "Enjoy a relaxed evening"] },
-            { day: "Day 4", title: "Departure or extra sightseeing", short: "Flexible day", details: ["Breakfast", "Optional city sightseeing", "Check out", "Travel to your station or airport"] },
-        ]
-        : isGoa ? [
-            { day: "Day 1", title: "Arrival + North Goa", short: "Candolim Beach, Fort Aguada, Sunset", details: ["Check-in and freshen up", "Visit Candolim Beach", "Explore Fort Aguada", "Sunset by the beach", "Dinner and optional nightlife"] },
-            { day: "Day 2", title: "Beaches & Activities", short: "Water activities, Baga Beach, Anjuna", details: ["Breakfast near your stay", "Water activities at Baga Beach", "Relax at Calangute Beach", "Visit Anjuna Beach", "Explore cafes and nightlife"] },
-            { day: "Day 3", title: "Explore & Local Experience", short: "Local markets, churches, food tour", details: ["Visit Old Goa Churches", "Explore local markets", "Try authentic Goan food", "Visit Panaji streets", "Enjoy a relaxed evening"] },
-            { day: "Day 4", title: "Departure", short: "Breakfast, check-out, return journey", details: ["Breakfast", "Last-minute shopping", "Check-out from hotel", "Travel to airport or station"] },
-        ] : [];
-
-        // =========================================================
-    // TRANSPORT OPTIONS
-    // =========================================================
-
-    const transportOptions = isRanchi
-        ? [
-            { title: "Cheapest", subtitle: "Train / Bus", price: "Check current fares", duration: "Depends on origin", icon: Bus, recommended: false },
-            { title: "Best Balance", subtitle: "Train + local transport", price: "Estimate only", duration: "Check route", icon: Train, recommended: true },
-            { title: "Fastest", subtitle: "Flight where available", price: "Check current fares", duration: "Route-dependent", icon: Plane, recommended: false },
-        ]
-        : isGoa ? [
-            { title: "Cheapest", subtitle: "Bus / Train", price: "₹1,200 - 1,800", duration: "12 - 14 hrs", icon: Bus, recommended: false },
-            { title: "Best Balance", subtitle: "Train + Local Cab", price: "₹2,800 - 3,500", duration: "10 - 12 hrs", icon: Train, recommended: true },
-            { title: "Fastest", subtitle: "Flight", price: "₹4,500 - 6,000", duration: "1.5 - 2 hrs", icon: Plane, recommended: false },
-        ] : [];
-
-        // =========================================================
-    // STAY AREAS
-    // =========================================================
-
-    const stayAreas = isRanchi
-        ? [
-            { name: "Ranchi city centre", description: "Convenient for city sights and food", price: "Compare current hotel rates", image: "", recommended: true },
-            { name: "Near railway station", description: "Useful for short trips and transit", price: "Compare current hotel rates", image: "", recommended: false },
-            { name: "Near airport access", description: "Consider based on your arrival time", price: "Compare current hotel rates", image: "", recommended: false },
-        ]
-        : isGoa ? [
-            { name: "Baga / Calangute", description: "Best for nightlife & friends", price: "₹2,500 - 4,000 / night", image: "/images/baga-beach.jpg", recommended: false },
-            { name: "Candolim", description: "Best for couples & families", price: "₹2,000 - 3,500 / night", image: "/images/fort-aguada.jpg", recommended: true },
-            { name: "Panaji", description: "Quiet, cultural & convenient", price: "₹1,800 - 3,000 / night", image: "/images/anjuna-beach.jpg", recommended: false },
-        ] : [];
-
-        // =========================================================
-    // FOOD DATA
-    // =========================================================
-
-    const foodItems = isRanchi
-        ? ["Dhuska", "Thekua", "Rugra (seasonal)", "Local Jharkhand cuisine"]
-        : isGoa
-            ? ["Goan Fish Curry", "Prawn Balchao", "Bebinca", "Goan Sausage"]
-            : [];
-
-        // =========================================================
     // MONEY SAVING TIPS
     // =========================================================
 
@@ -465,47 +995,56 @@ export default function Dashboard() {
             {/* =====================================================
                 TOP SECTION
             ===================================================== */}
-            <div className="grid grid-cols-1 gap-5 xl:grid-cols-4">
+            <div className="grid grid-cols-1 items-stretch gap-5 xl:grid-cols-4">
 
                 {/* LEFT SIDE */}
-                <div className="xl:col-span-3">
+                <div className="flex min-w-0 flex-col xl:col-span-3">
 
                     {/* =================================================
                         HERO
                     ================================================= */}
                     <div className="relative h-[430px] overflow-hidden rounded-2xl shadow-sm sm:h-[300px]">
 
-                        {isGoa ? (
-                            <Image src="/images/goa.jpg" alt="Goa beach" fill priority className="object-cover" />
-                        ) : (
-                            <div className="absolute inset-0 bg-gradient-to-br from-emerald-900 via-teal-800 to-slate-900" aria-hidden="true" />
+                        {/* Destination photograph, with the existing gradient as fallback. */}
+                        <div
+                            className="absolute inset-0 bg-gradient-to-br from-emerald-900 via-teal-800 to-slate-900"
+                            aria-hidden="true"
+                        />
+
+                        {destinationImage && (
+                            <div
+                                className="absolute inset-0 bg-cover bg-center"
+                                style={{ backgroundImage: `url("${destinationImage.url}")` }}
+                                role="img"
+                                aria-label={
+                                    destinationImage.description ||
+                                    `Photograph of ${tripDetails.destination}, India`
+                                }
+                            />
                         )}
 
-                        <div className="absolute inset-0 bg-gradient-to-r from-slate-950/70 via-slate-900/40 to-transparent" />
+                        {/* Keep text readable over bright photographs. */}
+                        <div
+                            className="absolute inset-0 bg-gradient-to-r from-slate-950/80 via-slate-900/45 to-slate-950/10"
+                            aria-hidden="true"
+                        />
+
+                       
 
                         <div className="absolute inset-0 flex flex-col justify-end p-5 sm:p-7">
 
                             <div className="max-w-xl">
                                 <h1 className="text-2xl font-bold text-white sm:text-3xl">
-                                    Your {tripDetails.destination} Trip is Ready! {isGoa ? "🌴" : isRanchi ? "🌿" : "🧭"}
+                                    Your {tripDetails.destination} Trip is Ready! {"🧭"}
                                 </h1>
 
                                 <p className="mt-2 text-sm text-slate-100 sm:text-base">
                                     {tripDetails.origin} to {tripDetails.destination} · {tripDetails.travellers} · {tripDetails.budget}.
-                                    {hasDestinationData
-                                        ? " Destination recommendations and prices are demo estimates."
-                                        : " Destination-specific recommendations are not available yet."}
+                                    {" Nearby attractions are based on mapped location data when available."}
                                 </p>
-                                {!hasDestinationData && (
-                                    <p className="mt-2 rounded-lg bg-amber-100/95 px-3 py-2 text-xs font-medium text-amber-950">
-                                        Pilgora does not yet have verified places, seasons, transport or stay data for {tripDetails.destination}. Avoid relying on the displayed generic budget estimate for booking decisions.
-                                    </p>
-                                )}
-                                {hasDestinationData && (
-                                    <p className="mt-2 inline-block rounded-lg bg-amber-100/95 px-3 py-2 text-xs font-medium text-amber-950">
-                                        Planning data and costs are illustrative estimates, not live prices or bookings.
-                                    </p>
-                                )}
+                                <p className="mt-2 inline-block rounded-lg bg-amber-100/95 px-3 py-2 text-xs font-medium text-amber-950">
+                                    Budget figures are illustrative baseline estimates, not live prices or bookings. Verify transport, stay, opening hours and seasonal conditions before travelling.
+                                </p>
                             </div>
 
                             {/* SUMMARY */}
@@ -557,7 +1096,7 @@ export default function Dashboard() {
                                         </p>
 
                                         <p className="font-bold text-slate-800">
-                                            {isRanchi ? "Oct - Mar" : isGoa ? "Nov - Feb" : "Not available"}
+                                            {destinationGuide?.seasons[0]?.months ?? "Not available"}
                                         </p>
                                     </div>
                                 </div>
@@ -649,101 +1188,71 @@ export default function Dashboard() {
                 {/* =====================================================
                     RIGHT SIDE
                 ===================================================== */}
-                <div className="flex flex-col gap-5">
+                <div className="flex min-h-0 flex-col gap-4 xl:h-full xl:max-h-full xl:self-stretch">
 
                     {/* BEST TIME */}
-                    <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-
+                    <div className="shrink-0 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
                         <h2 className="text-sm font-bold text-slate-800">
                             Best Time vs Cheapest Time
                         </h2>
 
-                        <div className="mt-3">
+                        <div className="mt-2">
                             {bestTimes.length === 0 && (
                                 <p className="py-3 text-xs text-slate-500">
-                                    Seasonal guidance for {tripDetails.destination} has not been added yet.
+                                    {guideLoading ? `Loading climate history for ${tripDetails.destination}…` : `Historical seasonal guidance is unavailable for ${tripDetails.destination}.`}
                                 </p>
                             )}
-                            {bestTimes.map((time, index) => {
+                            {bestTimes.slice(0, 3).map((time, index) => {
                                 const Icon = time.icon;
-
                                 return (
                                     <div
                                         key={time.title}
-                                        className={`flex gap-3 py-3 ${
-                                            index !==
-                                            bestTimes.length - 1
-                                                ? "border-b border-slate-100"
-                                                : ""
-                                        }`}
+                                        className={`flex gap-3 py-2.5 ${index !== Math.min(bestTimes.length, 3) - 1 ? "border-b border-slate-100" : ""}`}
                                     >
-                                        <Icon
-                                            size={17}
-                                            className={time.iconClass}
-                                        />
-
+                                        <Icon size={17} className={`mt-0.5 shrink-0 ${time.iconClass}`} aria-hidden="true" />
                                         <div className="min-w-0 flex-1">
-                                            <div className="flex justify-between gap-2">
-                                                <p className="text-xs font-semibold text-slate-800">
-                                                    {time.title}
-                                                </p>
-
-                                                <span
-                                                    className={`whitespace-nowrap text-xs font-semibold ${time.monthClass}`}
-                                                >
-                                                    {time.months}
-                                                </span>
+                                            <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
+                                                <p className="text-xs font-semibold text-slate-800">{time.title}</p>
+                                                <span className={`whitespace-nowrap text-xs font-semibold ${time.monthClass}`}>{time.months}</span>
                                             </div>
-
-                                            <p className="mt-1 text-[11px] text-slate-500">
-                                                {time.description}
-                                            </p>
+                                            <p className="mt-1 text-[11px] leading-4 text-slate-500">{time.description}</p>
                                         </div>
                                     </div>
                                 );
                             })}
+                            <p className="mt-1 text-[10px] leading-4 text-slate-400">Climate estimates are not price predictions. Verify forecasts, fares and accommodation prices before booking.</p>
                         </div>
                     </div>
 
                     {/* TRIP HIGHLIGHTS */}
-                    <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+                    <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                        <h2 className="shrink-0 text-sm font-bold text-slate-800">Trip Highlights</h2>
 
-                        <h2 className="text-sm font-bold text-slate-800">
-                            Trip Highlights
-                        </h2>
-
-                        <div className="mt-3">
-                            {tripHighlights.length === 0 && (
-                                <p className="py-3 text-xs text-slate-500">
-                                    Destination highlights for {tripDetails.destination} are not available yet.
-                                </p>
+                        <div className="mt-2 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
+                            {guideLoading && !destinationGuide && (
+                                <p role="status" className="py-3 text-xs text-slate-500">Finding highlights for {tripDetails.destination}…</p>
                             )}
-                            {tripHighlights.map(
-                                (highlight, index) => {
-                                    const Icon = highlight.icon;
 
-                                    return (
-                                        <div
-                                            key={highlight.title}
-                                            className={`flex items-center gap-3 py-2 ${
-                                                index !==
-                                                tripHighlights.length - 1
-                                                    ? "border-b border-slate-100"
-                                                    : ""
-                                            }`}
-                                        >
-                                            <Icon
-                                                size={16}
-                                                className="text-blue-600"
-                                            />
-
-                                            <p className="text-xs text-slate-600">
-                                                {highlight.title}
-                                            </p>
-                                        </div>
-                                    );
-                                }
+                            {!guideLoading && (!destinationGuide || destinationGuide.highlights.length === 0) && (
+                                <p className="py-3 text-xs text-slate-500">No mapped highlight details were returned for {tripDetails.destination}. Try again later or check the destination spelling.</p>
                             )}
+
+                            {destinationGuide?.highlights && destinationGuide.highlights.length > 0 && (
+                                <ul className="divide-y divide-slate-100">
+                                    {destinationGuide.highlights.slice(0, 5).map((highlight) => {
+                                        const Icon = highlight.icon;
+                                        return (
+                                            <li key={highlight.title} className="flex items-start gap-3 py-2.5 first:pt-1">
+                                                <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700">
+                                                    <Icon size={15} aria-hidden="true" />
+                                                </span>
+                                                <span className="min-w-0 text-xs leading-5 text-slate-700">{highlight.title}</span>
+                                            </li>
+                                        );
+                                    })}
+                                </ul>
+                            )}
+                            <p className="mt-2 text-[10px] leading-4 text-slate-400">Based on available public map listings. Coverage varies by destination; verify details before travelling.</p>
                         </div>
                     </div>
                 </div>
@@ -1003,14 +1512,21 @@ export default function Dashboard() {
                     </div>
 
                     <p className="mt-1 text-xs text-slate-500">
-                        Within ~50 km
+                        Mapped attractions within 50 km of {tripDetails.destination}. Distances are straight-line estimates.
                     </p>
 
                     <div className="mt-3 space-y-3">
-                        {displayedNearbyPlaces.length === 0 && (
-                            <p className="text-xs text-slate-500">
-                                Nearby-place data for {tripDetails.destination} is not available yet.
-                            </p>
+                        {nearbyLoading && (
+                            <p role="status" className="text-xs text-slate-500">Finding nearby attractions…</p>
+                        )}
+                        {nearbyError && (
+                            <p role="status" className="text-xs text-amber-700">{nearbyError}</p>
+                        )}
+                        {!nearbyLoading && !nearbyError && !tripDetails.destinationCoordinates && (
+                            <p className="text-xs text-slate-500">Select the destination from the autocomplete suggestions to find nearby attractions.</p>
+                        )}
+                        {!nearbyLoading && !nearbyError && tripDetails.destinationCoordinates && displayedNearbyPlaces.length === 0 && (
+                            <p className="text-xs text-slate-500">No mapped attractions found within 50 km of this location.</p>
                         )}
                         {displayedNearbyPlaces.map((place) => (
                             <div
@@ -1031,32 +1547,33 @@ export default function Dashboard() {
                                     </p>
                                 </div>
 
-                                <span className="text-right text-[10px] font-medium text-green-700">
-                                    {place.recommendation}
-                                </span>
+                                <div className="flex shrink-0 flex-col items-end gap-1">
+                                    <span className="text-right text-[10px] font-medium capitalize text-green-700">
+                                        {place.recommendation}
+                                    </span>
+                                    <a
+                                        href={`https://www.openstreetmap.org/?mlat=${place.lat}&mlon=${place.lon}#map=15/${place.lat}/${place.lon}`}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="text-[10px] font-medium text-blue-600 hover:underline"
+                                    >
+                                        Map
+                                    </a>
+                                </div>
                             </div>
                         ))}
                     </div>
 
-                    <button
-                        onClick={() =>
-                            setShowAllNearby(!showAllNearby)
-                        }
-                        className="mt-4 flex w-full items-center justify-center gap-1 text-sm font-medium text-blue-600"
-                    >
-                        {showAllNearby
-                            ? "Show Less"
-                            : "View All Nearby Places"}
-
-                        <ChevronDown
-                            size={16}
-                            className={
-                                showAllNearby
-                                    ? "rotate-180 transition"
-                                    : "transition"
-                            }
-                        />
-                    </button>
+                    {nearbyPlaces.length > 4 && (
+                        <button
+                            type="button"
+                            onClick={() => setShowAllNearby(!showAllNearby)}
+                            className="mt-4 flex w-full items-center justify-center gap-1 text-sm font-medium text-blue-600"
+                        >
+                            {showAllNearby ? "Show Less" : "View All Nearby Places"}
+                            <ChevronDown size={16} className={showAllNearby ? "rotate-180 transition" : "transition"} />
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -1173,7 +1690,7 @@ export default function Dashboard() {
                     <div className="mt-4 space-y-3">
                         {transportOptions.length === 0 && (
                             <p className="text-xs text-slate-500">
-                                Compare current train, bus and flight options for {tripDetails.origin} to {tripDetails.destination}. Route-specific estimates are not available yet.
+                                {guideLoading ? `Finding transport locations around ${tripDetails.destination}…` : `No transport locations were returned by the map source near ${tripDetails.destination}. Check route operators directly.`}
                             </p>
                         )}
                         {transportOptions.map((option) => {
@@ -1255,7 +1772,7 @@ export default function Dashboard() {
                     <div className="mt-4 space-y-3">
                         {stayAreas.length === 0 && (
                             <p className="text-xs text-slate-500">
-                                Stay-area recommendations for {tripDetails.destination} are not available yet. Compare current accommodation listings before booking.
+                                {guideLoading ? `Finding mapped accommodation near ${tripDetails.destination}…` : `No accommodation listings were returned near ${tripDetails.destination}. Search current stays and rates separately.`}
                             </p>
                         )}
                         {stayAreas.map((area) => {
@@ -1346,7 +1863,7 @@ export default function Dashboard() {
                         <div className="mt-2 space-y-1 pl-6">
                             {foodItems.length === 0 && (
                                 <p className="text-[11px] text-slate-500">
-                                    Local food recommendations for {tripDetails.destination} are not available yet.
+                                    Local food guidance for {tripDetails.destination} is not in the current curated set yet.
                                 </p>
                             )}
                             {foodItems.map((food) => (

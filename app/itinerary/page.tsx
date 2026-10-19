@@ -1,633 +1,313 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { defaultTripDetails, getTripDetails } from "@/lib/trip-details";
-
-import AppShell from "@/components/app-shell";
-
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useEffect, useState, type FormEvent } from "react";
 import {
+    ArrowRight,
     CalendarDays,
-    Clock,
-    MapPin,
-    IndianRupee,
     CheckCircle2,
+    MapPin,
+    Plane,
     Sparkles,
-    Car,
-    Utensils,
-    Camera,
-    Palmtree,
-    Landmark,
+    Users,
+    Wallet,
 } from "lucide-react";
+import LoginModal from "@/components/login-modal";
+import { searchLocationSuggestions } from "@/lib/location-search";
+import {
+    defaultTripDetails,
+    getTripDetails,
+    saveTripDetails,
+} from "@/lib/trip-details";
+import type { LocationSuggestion } from "@/lib/travel-types";
 
-export default function ItineraryPage() {
-
-    // ==========================================
-    // SELECTED DAY
-    // Controls which day's details are expanded
-    // ==========================================
-    const [selectedDay, setSelectedDay] = useState(1);
-    const [tripDetails, setTripDetails] = useState(defaultTripDetails);
+function LocationAutocomplete({
+    label,
+    value,
+    placeholder,
+    onChange,
+    onSelect,
+}: {
+    label: string;
+    value: string;
+    placeholder: string;
+    onChange: (value: string) => void;
+    onSelect?: (selection: { name: string; coordinates: { lat: number; lon: number } | null }) => void;
+}) {
+    const [suggestions, setSuggestions] = useState<LocationSuggestion[]>([]);
+    const [isOpen, setIsOpen] = useState(false);
+    const [isLoading, setIsLoading] = useState(false);
+    const [searchError, setSearchError] = useState("");
 
     useEffect(() => {
-        setTripDetails(getTripDetails());
-    }, []);
+        const query = value.trim();
 
-    // ==========================================
-    // 4-DAY GOA ITINERARY
-    // Detailed version of dashboard trip summary
-    // ==========================================
-    const itineraryDays = [
-        {
-            day: 1,
-            title: "Arrival & North Goa Beaches",
-            subtitle: "Settle in and enjoy your first Goan sunset",
-            area: "North Goa",
-            icon: Palmtree,
-            estimatedCost: "₹2,200",
+        if (!isOpen || query.length < 2) {
+            setSuggestions([]);
+            setIsLoading(false);
+            setSearchError("");
+            return;
+        }
 
-            activities: [
-                {
-                    time: "10:00 AM",
-                    title: "Arrive & Check-in",
-                    description:
-                        "Reach your stay, freshen up and relax before starting your Goa trip.",
-                    icon: MapPin,
-                    duration: "1-2 hrs",
-                },
-                {
-                    time: "1:00 PM",
-                    title: "Lunch",
-                    description:
-                        "Try local Goan food or a beachside cafe near your stay.",
-                    icon: Utensils,
-                    duration: "1 hr",
-                },
-                {
-                    time: "3:00 PM",
-                    title: "Explore Baga Beach",
-                    description:
-                        "Relax at the beach, enjoy the sea and explore nearby beach activities.",
-                    icon: Palmtree,
-                    duration: "3-4 hrs",
-                },
-                {
-                    time: "7:00 PM",
-                    title: "Sunset & Evening at Baga",
-                    description:
-                        "Enjoy the sunset, beach atmosphere and evening nightlife.",
-                    icon: Camera,
-                    duration: "2-3 hrs",
-                },
-            ],
-        },
+        const controller = new AbortController();
+        const timeoutId = window.setTimeout(async () => {
+            setIsLoading(true);
+            setSearchError("");
 
-        {
-            day: 2,
-            title: "Fort Aguada & Coastal Exploration",
-            subtitle: "History, scenic views and famous North Goa beaches",
-            area: "North Goa",
-            icon: Landmark,
-            estimatedCost: "₹2,300",
+            try {
+                setSuggestions(await searchLocationSuggestions(query, controller.signal, 6));
+            } catch (error) {
+                if (error instanceof Error && error.name !== "AbortError") {
+                    setSuggestions([]);
+                    setSearchError("Could not load suggestions. You can still enter the location manually.");
+                }
+            } finally {
+                if (!controller.signal.aborted) setIsLoading(false);
+            }
+        }, 300);
 
-            activities: [
-                {
-                    time: "9:00 AM",
-                    title: "Breakfast & Start Early",
-                    description:
-                        "Have breakfast and leave early to comfortably cover the day's places.",
-                    icon: Utensils,
-                    duration: "1 hr",
-                },
-                {
-                    time: "10:30 AM",
-                    title: "Visit Fort Aguada",
-                    description:
-                        "Explore the historic Portuguese fort and enjoy panoramic sea views.",
-                    icon: Landmark,
-                    duration: "1-2 hrs",
-                },
-                {
-                    time: "1:00 PM",
-                    title: "Candolim Area",
-                    description:
-                        "Explore the nearby coastal area and have lunch.",
-                    icon: Palmtree,
-                    duration: "2 hrs",
-                },
-                {
-                    time: "4:00 PM",
-                    title: "Coastal Drive & Sunset",
-                    description:
-                        "Take a scenic ride through North Goa and enjoy the evening views.",
-                    icon: Car,
-                    duration: "2-3 hrs",
-                },
-            ],
-        },
+        return () => {
+            window.clearTimeout(timeoutId);
+            controller.abort();
+        };
+    }, [value, isOpen]);
 
-        {
-            day: 3,
-            title: "Dudhsagar Falls Adventure",
-            subtitle: "A full-day nature and adventure experience",
-            area: "South-East Goa",
-            icon: Camera,
-            estimatedCost: "₹3,200",
-
-            activities: [
-                {
-                    time: "7:00 AM",
-                    title: "Early Departure",
-                    description:
-                        "Leave early because Dudhsagar Falls requires most of the day.",
-                    icon: Car,
-                    duration: "2-3 hrs travel",
-                },
-                {
-                    time: "10:00 AM",
-                    title: "Dudhsagar Falls Experience",
-                    description:
-                        "Explore the famous waterfall and enjoy the surrounding natural scenery.",
-                    icon: Camera,
-                    duration: "4-5 hrs",
-                },
-                {
-                    time: "3:00 PM",
-                    title: "Lunch & Return Journey",
-                    description:
-                        "Have lunch and begin your return towards your stay.",
-                    icon: Utensils,
-                    duration: "1 hr",
-                },
-                {
-                    time: "7:00 PM",
-                    title: "Relaxing Evening",
-                    description:
-                        "Keep the evening relaxed after a long day of travel and exploration.",
-                    icon: Palmtree,
-                    duration: "Flexible",
-                },
-            ],
-        },
-
-        {
-            day: 4,
-            title: "Anjuna Beach & Departure",
-            subtitle: "A relaxed final day before leaving Goa",
-            area: "North Goa",
-            icon: Palmtree,
-            estimatedCost: "₹3,300",
-
-            activities: [
-                {
-                    time: "9:00 AM",
-                    title: "Breakfast & Check-out",
-                    description:
-                        "Pack your luggage and check out, or leave it safely at your stay.",
-                    icon: Utensils,
-                    duration: "1-2 hrs",
-                },
-                {
-                    time: "11:00 AM",
-                    title: "Explore Anjuna Beach",
-                    description:
-                        "Enjoy the beach, scenic views and relaxed atmosphere.",
-                    icon: Palmtree,
-                    duration: "2-3 hrs",
-                },
-                {
-                    time: "2:00 PM",
-                    title: "Lunch & Last-minute Exploration",
-                    description:
-                        "Have lunch and spend some free time shopping or exploring nearby areas.",
-                    icon: Utensils,
-                    duration: "2 hrs",
-                },
-                {
-                    time: "5:00 PM",
-                    title: "Departure",
-                    description:
-                        "Collect your luggage and begin your journey back.",
-                    icon: Car,
-                    duration: "Depends on travel",
-                },
-            ],
-        },
-    ];
-
-    // ==========================================
-    // CURRENT SELECTED DAY DATA
-    // ==========================================
-    const requestedDays = Number.parseInt(tripDetails.duration, 10) || 4;
-    // The current destination-specific sample data contains four Goa days.
-    // Show only the requested number of days when it is within that dataset.
-    const displayedItineraryDays = itineraryDays.slice(
-        0,
-        Math.min(requestedDays, itineraryDays.length),
-    );
-
-    const currentDay =
-        displayedItineraryDays.find((item) => item.day === selectedDay) ||
-        displayedItineraryDays[0] ||
-        itineraryDays[0];
-
-    const isGoaDestination = tripDetails.destination.trim().toLowerCase() === "goa";
-    const durationNeedsMoreData = requestedDays > itineraryDays.length;
+    const selectSuggestion = (suggestion: LocationSuggestion) => {
+        // Store only the selected place name; keep the full address in the dropdown for disambiguation.
+        onChange(suggestion.name);
+        onSelect?.({ name: suggestion.name, coordinates: suggestion.coordinates });
+        setSuggestions([]);
+        setIsOpen(false);
+        setSearchError("");
+    };
 
     return (
-        <AppShell>
-            <section className="p-4 md:p-6 lg:p-8">
+        <div className={`relative border-b border-slate-200 p-4 text-sm font-semibold text-slate-600 lg:border-b-0 lg:border-r ${isOpen ? "z-50" : "z-0"}`}>
+            <label className="block" htmlFor={`location-${label.toLowerCase()}`}>
+                {label}
+            </label>
+            <div className="mt-1 flex items-center gap-2">
+                <input
+                    id={`location-${label.toLowerCase()}`}
+                    required
+                    autoComplete="off"
+                    role="combobox"
+                    aria-autocomplete="list"
+                    aria-expanded={isOpen && (suggestions.length > 0 || isLoading)}
+                    value={value}
+                    onFocus={() => setIsOpen(true)}
+                    onChange={(event) => {
+                        onChange(event.target.value);
+                        setIsOpen(true);
+                    }}
+                    onKeyDown={(event) => {
+                        if (event.key === "Escape") {
+                            setIsOpen(false);
+                            setSuggestions([]);
+                        }
+                    }}
+                    className="w-full min-w-0 bg-transparent text-base font-medium text-slate-900 outline-none"
+                    placeholder={placeholder}
+                />
+                {isLoading && (
+                    <span className="shrink-0 text-xs font-normal text-slate-400">Searching…</span>
+                )}
+            </div>
 
-                    {/* ==============================
-                        PAGE HEADER
-                    ============================== */}
-                    <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-
-                        <div>
-                            <div className="flex items-center gap-2">
-
-                                <CalendarDays
-                                    size={24}
-                                    className="text-blue-600"
-                                />
-
-                                <h1 className="text-2xl font-bold text-slate-800 md:text-3xl">
-                                    Your {tripDetails.destination} Itinerary
-                                </h1>
-                            </div>
-
-                            <p className="mt-2 text-sm text-slate-500">
-                                Your complete {tripDetails.duration.toLowerCase()} trip plan,
-                                based on the recommendations from your Trip Dashboard.
-                            </p>
-                        </div>
-
-                        {/* Trip Summary */}
-                        <div className="flex flex-wrap gap-2">
-
-                            <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
-                                <p className="text-[10px] text-slate-500">
-                                    Duration
-                                </p>
-
-                                <p className="text-sm font-semibold text-slate-800">
-                                    {tripDetails.duration}
-                                </p>
-                            </div>
-
-                            <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
-                                <p className="text-[10px] text-slate-500">
-                                    Style
-                                </p>
-
-                                <p className="text-sm font-semibold text-slate-800">
-                                    {tripDetails.tripType}
-                                </p>
-                            </div>
-
-                            <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
-                                <p className="text-[10px] text-slate-500">
-                                    Budget
-                                </p>
-
-                                <p className="text-sm font-semibold text-green-600">
-                                    {tripDetails.budget}
-                                </p>
-                            </div>
-
-                        </div>
-                    </div>
-
-                    {!isGoaDestination && (
-                        <div role="status" className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">
-                            Your selected destination is <strong>{tripDetails.destination}</strong>, but detailed itinerary data is currently available only for Goa. The activities below are Goa demo content and should not be treated as recommendations for your destination.
-                        </div>
-                    )}
-
-                    {durationNeedsMoreData && isGoaDestination && (
-                        <div role="status" className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">
-                            Your trip is {tripDetails.duration}, but the current Goa sample itinerary contains four days. The additional days will appear once more itinerary data is added.
-                        </div>
-                    )}
-
-                    {/* ==============================
-                        DAY SELECTOR
-                    ============================== */}
-                    <div className="mt-6 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-
-                        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-
-                            {displayedItineraryDays.map((item) => {
-
-                                const Icon = item.icon;
-
-                                const isSelected =
-                                    selectedDay === item.day;
-
-                                return (
-                                    <button
-                                        key={item.day}
-                                        onClick={() =>
-                                            setSelectedDay(item.day)
-                                        }
-                                        className={`flex items-center gap-3 rounded-lg p-3 text-left transition ${
-                                            isSelected
-                                                ? "bg-blue-600 text-white shadow-sm"
-                                                : "hover:bg-slate-50 text-slate-700"
-                                        }`}
-                                    >
-                                        <div
-                                            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${
-                                                isSelected
-                                                    ? "bg-white/20"
-                                                    : "bg-blue-50 text-blue-600"
-                                            }`}
-                                        >
-                                            <Icon size={18} />
-                                        </div>
-
-                                        <div className="min-w-0">
-                                            <p className="text-xs font-semibold">
-                                                Day {item.day}
-                                            </p>
-
-                                            <p
-                                                className={`truncate text-[11px] ${
-                                                    isSelected
-                                                        ? "text-blue-100"
-                                                        : "text-slate-500"
-                                                }`}
-                                            >
-                                                {item.area}
-                                            </p>
-                                        </div>
-                                    </button>
-                                );
-                            })}
-
-                        </div>
-                    </div>
-
-                    {/* ==============================
-                        SELECTED DAY HERO
-                    ============================== */}
-                    <div className="mt-5 rounded-xl border border-blue-100 bg-blue-50 p-5">
-
-                        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-
-                            <div>
-                                <div className="flex items-center gap-2">
-
-                                    <span className="rounded-full bg-blue-600 px-3 py-1 text-xs font-semibold text-white">
-                                        Day {currentDay.day}
-                                    </span>
-
-                                    <span className="text-xs text-slate-500">
-                                        {currentDay.area}
-                                    </span>
-                                </div>
-
-                                <h2 className="mt-3 text-xl font-bold text-slate-800">
-                                    {currentDay.title}
-                                </h2>
-
-                                <p className="mt-1 text-sm text-slate-600">
-                                    {currentDay.subtitle}
-                                </p>
-                            </div>
-
-                            <div className="rounded-lg bg-white px-4 py-3">
-
-                                <div className="flex items-center gap-2">
-                                    <IndianRupee
-                                        size={17}
-                                        className="text-green-600"
-                                    />
-
-                                    <div>
-                                        <p className="text-[10px] text-slate-500">
-                                            Estimated Day Cost
-                                        </p>
-
-                                        <p className="text-sm font-bold text-slate-800">
-                                            {currentDay.estimatedCost}
-                                        </p>
-                                    </div>
-                                </div>
-
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* ==============================
-                        DAY TIMELINE
-                    ============================== */}
-                    <div className="mt-5 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-
-                        <div className="flex items-center justify-between gap-4">
-
-                            <div>
-                                <h2 className="text-lg font-bold text-slate-800">
-                                    Day {currentDay.day} Schedule
-                                </h2>
-
-                                <p className="mt-1 text-sm text-slate-500">
-                                    A suggested schedule to help you make the most of your day.
-                                </p>
-                            </div>
-
-                            <Sparkles
-                                size={22}
-                                className="shrink-0 text-blue-600"
-                            />
-                        </div>
-
-                        {/* Activities */}
-                        <div className="mt-6">
-
-                            {currentDay.activities.map(
-                                (activity, index) => {
-
-                                    const ActivityIcon =
-                                        activity.icon;
-
-                                    const isLast =
-                                        index ===
-                                        currentDay.activities.length - 1;
-
-                                    return (
-                                        <div
-                                            key={activity.title}
-                                            className="flex gap-4"
-                                        >
-
-                                            {/* Timeline */}
-                                            <div className="flex flex-col items-center">
-
-                                                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-600">
-                                                    <ActivityIcon size={18} />
-                                                </div>
-
-                                                {!isLast && (
-                                                    <div className="h-full min-h-10 w-px bg-slate-200" />
-                                                )}
-                                            </div>
-
-                                            {/* Activity */}
-                                            <div
-                                                className={`flex-1 pb-6 ${
-                                                    isLast
-                                                        ? "pb-0"
-                                                        : ""
-                                                }`}
-                                            >
-
-                                                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-
-                                                    <div>
-                                                        <div className="flex items-center gap-2">
-
-                                                            <Clock
-                                                                size={14}
-                                                                className="text-slate-400"
-                                                            />
-
-                                                            <span className="text-xs font-semibold text-blue-600">
-                                                                {activity.time}
-                                                            </span>
-                                                        </div>
-
-                                                        <h3 className="mt-2 font-semibold text-slate-800">
-                                                            {activity.title}
-                                                        </h3>
-                                                    </div>
-
-                                                    <span className="w-fit rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-500">
-                                                        {activity.duration}
-                                                    </span>
-                                                </div>
-
-                                                <p className="mt-2 text-sm leading-6 text-slate-500">
-                                                    {activity.description}
-                                                </p>
-                                            </div>
-                                        </div>
-                                    );
-                                }
-                            )}
-
-                        </div>
-                    </div>
-
-                    {/* ==============================
-                        ALL DAYS OVERVIEW
-                    ============================== */}
-                    <div className="mt-5">
-
-                        <h2 className="text-lg font-bold text-slate-800">
-                            Complete Trip Overview
-                        </h2>
-
-                        <p className="mt-1 text-sm text-slate-500">
-                            See how your selected {tripDetails.duration.toLowerCase()} trip is planned.
+            {isOpen && value.trim().length >= 2 && (suggestions.length > 0 || searchError) && (
+                <div
+                    role="listbox"
+                    aria-label={`${label} location suggestions`}
+                    className="absolute left-0 top-full z-[100] mt-2 max-h-72 w-max min-w-full max-w-[min(24rem,calc(100vw-2rem))] overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 text-slate-800 shadow-xl"
+                >
+                    {suggestions.map((suggestion) => (
+                        <button
+                            key={suggestion.id}
+                            type="button"
+                            role="option"
+                            aria-selected={false}
+                            onMouseDown={(event) => event.preventDefault()}
+                            onClick={() => selectSuggestion(suggestion)}
+                            className="flex w-full items-start gap-2 rounded-lg px-3 py-2.5 text-left hover:bg-blue-50 focus:bg-blue-50 focus:outline-none"
+                        >
+                            <MapPin size={16} className="mt-0.5 shrink-0 text-blue-600" />
+                            <span className="min-w-0">
+                                <span className="block text-sm font-semibold">{suggestion.name}</span>
+                                <span className="block text-xs font-normal text-slate-500">{suggestion.label}</span>
+                            </span>
+                        </button>
+                    ))}
+                    {searchError && (
+                        <p role="status" className="px-3 py-2 text-xs font-normal text-amber-700">
+                            {searchError}
                         </p>
+                    )}
+                </div>
+            )}
 
-                        <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+            {isOpen && value.trim().length >= 2 && !isLoading && !searchError && suggestions.length === 0 && (
+                <div className="absolute left-0 top-full z-[100] mt-2 w-max min-w-full max-w-[min(24rem,calc(100vw-2rem))] rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs font-normal text-slate-500 shadow-xl">
+                    No suggestions found. You can still enter the location manually.
+                </div>
+            )}
+        </div>
+    );
+}
 
-                            {displayedItineraryDays.map((item) => {
 
-                                const Icon = item.icon;
+export default function Home() {
+    const router = useRouter();
+    const [tripDetails, setTripDetails] = useState(defaultTripDetails);
+    const [loginOpen, setLoginOpen] = useState(false);
+    const [saveError, setSaveError] = useState("");
 
-                                const isSelected =
-                                    selectedDay === item.day;
+    useEffect(() => {
+        const storedTripDetails = getTripDetails();
+        setTripDetails(storedTripDetails);
+    }, []);
 
-                                return (
-                                    <button
-                                        key={item.day}
-                                        onClick={() =>
-                                            setSelectedDay(item.day)
-                                        }
-                                        className={`rounded-xl border bg-white p-5 text-left shadow-sm transition ${
-                                            isSelected
-                                                ? "border-blue-500 ring-2 ring-blue-100"
-                                                : "border-slate-200 hover:border-blue-300"
-                                        }`}
-                                    >
+    const updateDetail = (key: keyof typeof tripDetails, value: string) => {
+        setTripDetails((current) => ({
+            ...current,
+            [key]: value,
+            ...(key === "origin" ? { originCoordinates: null } : {}),
+            ...(key === "destination" ? { destinationCoordinates: null } : {}),
+        }));
+    };
 
-                                        <div className="flex items-start justify-between gap-4">
+    const handlePlanSubmit = (event: FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        setSaveError("");
 
-                                            <div className="flex items-center gap-3">
+        const nextTripDetails = {
+            ...tripDetails,
+            origin: tripDetails.origin.trim(),
+            destination: tripDetails.destination.trim(),
+        };
 
-                                                <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
-                                                    <Icon size={21} />
-                                                </div>
+        if (!nextTripDetails.origin || !nextTripDetails.destination) {
+            setSaveError("Please enter both your origin and destination.");
+            return;
+        }
 
-                                                <div>
-                                                    <p className="text-xs font-semibold text-blue-600">
-                                                        Day {item.day}
-                                                    </p>
+        try {
+            saveTripDetails(nextTripDetails);
+            router.push("/dashboard#trip-options");
+        } catch {
+            setSaveError(
+                "Unable to save your trip. Please check your browser storage and try again.",
+            );
+        }
+    };
 
-                                                    <h3 className="mt-1 font-bold text-slate-800">
-                                                        {item.title}
-                                                    </h3>
-                                                </div>
-                                            </div>
-
-                                            <CheckCircle2
-                                                size={18}
-                                                className={
-                                                    isSelected
-                                                        ? "text-blue-600"
-                                                        : "text-slate-300"
-                                                }
-                                            />
-                                        </div>
-
-                                        <p className="mt-4 text-sm text-slate-500">
-                                            {item.subtitle}
-                                        </p>
-
-                                        <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-4">
-
-                                            <span className="text-xs text-slate-500">
-                                                {item.activities.length} activities
-                                            </span>
-
-                                            <span className="text-sm font-semibold text-slate-800">
-                                                {item.estimatedCost}
-                                            </span>
-                                        </div>
-
-                                    </button>
-                                );
-                            })}
-
-                        </div>
+    return (
+        <main className="min-h-screen overflow-hidden bg-white text-slate-900">
+            <section className="bg-[#05203c] text-white">
+                <nav className="mx-auto flex max-w-7xl items-center justify-between px-5 py-5 sm:px-8 lg:px-10">
+                    <Link href="/" className="flex items-center gap-3" aria-label="Pilgora home">
+                        <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-500 shadow-lg shadow-blue-500/30"><Plane size={22} className="rotate-[-25deg]" /></span>
+                        <span><span className="block text-xl font-bold tracking-tight">Pilgora</span><span className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-blue-200">Travel smarter</span></span>
+                    </Link>
+                    <div className="flex items-center gap-3">
+                        <a href="#what-you-get" className="hidden text-sm font-semibold text-blue-100 hover:text-white sm:block">How it works</a>
+                        <button type="button" onClick={() => setLoginOpen(true)} className="rounded-xl bg-white px-4 py-2 text-sm font-bold text-[#05203c] hover:bg-blue-50">Log in</button>
                     </div>
+                </nav>
 
-                    {/* ==============================
-                        TRIP NOTE
-                    ============================== */}
-                    <div className="mt-5 flex gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
+                <div className="mx-auto max-w-7xl px-5 pb-12 pt-7 sm:px-8 lg:px-10 lg:pb-16">
+                    <h1 className="mt-7 text-4xl font-bold tracking-[-0.04em] sm:text-5xl">Plan a better trip. <span className="text-blue-300">One simple start.</span></h1>
+                    <p className="mt-3 text-base text-blue-100">Set your route and travel preferences—Pilgora organizes the details in one place.</p>
 
-                        <Sparkles
-                            size={19}
-                            className="mt-0.5 shrink-0 text-amber-600"
-                        />
-
-                        <div>
-                            <h3 className="text-sm font-semibold text-amber-900">
-                                Your itinerary is flexible
-                            </h3>
-
-                            <p className="mt-1 text-sm leading-6 text-amber-800">
-                                This sample itinerary uses your saved destination, duration, traveller preferences and budget selection.
-                                Activity costs are illustrative estimates, not live prices. You can customize
-                                places, activities and timing according to your actual travel dates.
+                    <form onSubmit={handlePlanSubmit} className="mt-8">
+                        <div className="relative grid rounded-2xl bg-white shadow-2xl shadow-slate-950/30 sm:grid-cols-2 lg:grid-cols-[1.15fr_1.15fr_.85fr_.95fr_1fr_.85fr_1fr] lg:items-stretch">
+                            <LocationAutocomplete
+                                label="From"
+                                value={tripDetails.origin}
+                                placeholder="City or airport"
+                                onChange={(value) => updateDetail("origin", value)}
+                                onSelect={({ coordinates }) => setTripDetails((current) => ({ ...current, originCoordinates: coordinates }))}
+                            />
+                            <LocationAutocomplete
+                                label="To"
+                                value={tripDetails.destination}
+                                placeholder="City or destination"
+                                onChange={(value) => updateDetail("destination", value)}
+                                onSelect={({ coordinates }) => setTripDetails((current) => ({ ...current, destinationCoordinates: coordinates }))}
+                            />
+                            <label className="border-b border-slate-200 p-4 text-sm font-semibold text-slate-600 lg:border-b-0 lg:border-r"><span className="flex items-center gap-1"><CalendarDays size={14} />Duration</span><select value={tripDetails.duration} onChange={(event) => updateDetail("duration", event.target.value)} className="mt-1 w-full bg-transparent text-base font-medium text-slate-900 outline-none"><option>2 Days</option><option>3 Days</option><option>4 Days</option><option>5 Days</option><option>7 Days</option></select></label>
+                            <label className="border-b border-slate-200 p-4 text-sm font-semibold text-slate-600 lg:border-b-0 lg:border-r"><span className="flex items-center gap-1"><Users size={14} />Travellers</span><select value={tripDetails.travellers} onChange={(event) => updateDetail("travellers", event.target.value)} className="mt-1 w-full bg-transparent text-base font-medium text-slate-900 outline-none"><option>1 Adult</option><option>2 Adults</option><option>3 Adults</option><option>4 Adults</option><option>Family</option><option>Friends</option></select></label>
+                            <label className="border-b border-slate-200 p-4 text-sm font-semibold text-slate-600 lg:border-b-0 lg:border-r"><span className="flex items-center gap-1"><Wallet size={14} />Budget</span><select value={tripDetails.budget} onChange={(event) => updateDetail("budget", event.target.value)} className="mt-1 w-full bg-transparent text-base font-medium text-slate-900 outline-none"><option>Budget</option><option>Moderate Budget</option><option>Comfortable Budget</option><option>Luxury Budget</option></select></label>
+                            <label className="border-b border-slate-200 p-4 text-sm font-semibold text-slate-600 sm:border-b-0 lg:border-r"><span className="flex items-center gap-1"><Sparkles size={14} />Style</span><select value={tripDetails.tripType} onChange={(event) => updateDetail("tripType", event.target.value)} className="mt-1 w-full bg-transparent text-base font-medium text-slate-900 outline-none"><option>Solo</option><option>Couple</option><option>Family</option><option>Friends</option></select></label>
+                            <button type="submit" className="m-2 flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-4 text-sm font-bold text-white transition hover:bg-blue-700">Build plan <ArrowRight size={17} /></button>
+                        </div>
+                        <p className="mt-3 flex items-center gap-2 text-sm text-blue-100"><CheckCircle2 size={15} className="text-blue-300" /> Start typing a city or place to see location suggestions. Destination itineraries and costs may still be estimates.</p>
+                        {saveError && (
+                            <p role="alert" className="mt-3 text-sm font-medium text-red-300">
+                                {saveError}
                             </p>
+                        )}
+                    </form>
+                </div>
+            </section>
+
+            <section className="bg-white px-5 py-10 text-slate-900 sm:px-8 lg:px-10">
+                <div className="mx-auto grid max-w-7xl gap-4 sm:grid-cols-2">
+                    <Link
+                        href="/dashboard#trip-options"
+                        className="flex items-center gap-3 rounded-2xl bg-[#05203c] p-5 text-sm font-bold text-white shadow-lg shadow-slate-200 transition hover:-translate-y-0.5"
+                    >
+                        <Sparkles size={21} className="text-blue-300" />
+                        Build my trip
+                    </Link>
+                    <Link
+                        href="/places"
+                        className="flex items-center gap-3 rounded-2xl bg-[#05203c] p-5 text-sm font-bold text-white shadow-lg shadow-slate-200 transition hover:-translate-y-0.5"
+                    >
+                        <MapPin size={21} className="text-blue-300" />
+                        Explore places
+                    </Link>
+                </div>
+            </section>
+
+            <section className="bg-white px-5 py-20 text-slate-900 sm:px-8 lg:px-10">
+                <div className="mx-auto max-w-7xl">
+                    <div className="grid gap-10 lg:grid-cols-[0.8fr_1.2fr] lg:items-end">
+                        <div>
+                            <p className="text-sm font-bold uppercase tracking-[0.14em] text-blue-600">More than a destination list</p>
+                            <h2 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">Every decision for your trip, in one calm workspace.</h2>
                         </div>
+                        <p className="max-w-2xl text-base leading-7 text-slate-600">Pilgora turns scattered research into practical next steps—what to do, where to stay, how to get around, and what your choices mean for the budget.</p>
                     </div>
 
+                    <div className="mt-10 grid gap-4 md:grid-cols-3">
+                        <article className="rounded-2xl border border-slate-200 bg-slate-50 p-6 shadow-sm">
+                            <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-100 text-blue-700"><CalendarDays size={21} /></span>
+                            <h3 className="mt-5 text-lg font-bold">A day that flows</h3>
+                            <p className="mt-2 text-sm leading-6 text-slate-600">See your trip day by day, with enough structure to make planning feel easy.</p>
+                        </article>
+                        <article className="rounded-2xl border border-slate-200 bg-slate-50 p-6 shadow-sm">
+                            <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700"><Wallet size={21} /></span>
+                            <h3 className="mt-5 text-lg font-bold">A budget you understand</h3>
+                            <p className="mt-2 text-sm leading-6 text-slate-600">Compare travel styles, understand costs, and find ways to spend smarter.</p>
+                        </article>
+                        <article className="rounded-2xl border border-slate-200 bg-slate-50 p-6 shadow-sm">
+                            <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-violet-100 text-violet-700"><Sparkles size={21} /></span>
+                            <h3 className="mt-5 text-lg font-bold">Recommendations with context</h3>
+                            <p className="mt-2 text-sm leading-6 text-slate-600">Choose stays, transport and places based on the kind of trip you want.</p>
+                        </article>
+                    </div>
+                </div>
             </section>
-        </AppShell>
+
+            <section className="bg-slate-100 px-5 py-16 text-slate-900 sm:px-8 lg:px-10">
+                <div className="mx-auto flex max-w-7xl flex-col gap-6 rounded-3xl bg-slate-900 px-6 py-8 text-white shadow-2xl sm:px-10 sm:py-10 lg:flex-row lg:items-center lg:justify-between">
+                    <div><p className="text-sm font-semibold text-blue-300">READY WHEN YOU ARE</p><h2 className="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">Your next great trip starts with a few simple choices.</h2><p className="mt-2 text-sm leading-6 text-slate-300">Set your travel preferences above, then explore the plan Pilgora builds around them.</p></div>
+                    <button type="button" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-blue-500 px-5 py-3 text-sm font-bold text-white hover:bg-blue-400">Plan my trip <ArrowRight size={17} /></button>
+                </div>
+            </section>
+
+            <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)} />
+        </main>
     );
 }

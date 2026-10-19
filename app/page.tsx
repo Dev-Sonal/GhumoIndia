@@ -14,19 +14,14 @@ import {
     Wallet,
 } from "lucide-react";
 import LoginModal from "@/components/login-modal";
+import { searchLocationSuggestions } from "@/lib/location-search";
 import {
     defaultTripDetails,
     getTripDetails,
     saveTripDetails,
+    type Coordinates,
 } from "@/lib/trip-details";
-
-
-type LocationSuggestion = {
-    id: string;
-    name: string;
-    label: string;
-    type?: string;
-};
+import type { LocationSuggestion } from "@/lib/travel-types";
 
 function LocationAutocomplete({
     label,
@@ -37,7 +32,7 @@ function LocationAutocomplete({
     label: string;
     value: string;
     placeholder: string;
-    onChange: (value: string) => void;
+    onChange: (value: string, coordinates?: Coordinates | null) => void;
 }) {
     const [suggestions, setSuggestions] = useState<LocationSuggestion[]>([]);
     const [isOpen, setIsOpen] = useState(false);
@@ -60,92 +55,7 @@ function LocationAutocomplete({
             setSearchError("");
 
             try {
-                const params = new URLSearchParams({
-                    q: query,
-                    limit: "6",
-                    lang: "en",
-                });
-
-                const response = await fetch(
-                    `https://photon.komoot.io/api/?${params.toString()}`,
-                    { signal: controller.signal }
-                );
-
-                if (!response.ok) {
-                    throw new Error("Location search is temporarily unavailable.");
-                }
-
-                const result = (await response.json()) as {
-                    features?: Array<{
-                        properties?: {
-                            osm_id?: number;
-                            name?: string;
-                            city?: string;
-                            town?: string;
-                            village?: string;
-                            county?: string;
-                            state?: string;
-                            country?: string;
-                            type?: string;
-                        };
-                    }>;
-                };
-
-                const uniqueSuggestions = new Map<string, LocationSuggestion>();
-
-                for (const feature of result.features ?? []) {
-                    const properties = feature.properties;
-                    const name =
-                        properties?.name ??
-                        properties?.city ??
-                        properties?.town ??
-                        properties?.village;
-
-                    if (!name) continue;
-
-                    const locality = properties.city ?? properties.town ?? properties.village;
-                    const parts = [name];
-
-                    if (locality && locality.toLowerCase() !== name.toLowerCase()) {
-                        parts.push(locality);
-                    }
-                    if (properties.state && !parts.some((part) => part.toLowerCase() === properties.state?.toLowerCase())) {
-                        parts.push(properties.state);
-                    }
-                    if (properties.country) parts.push(properties.country);
-
-                    const labelText = [...new Set(parts)].join(", ");
-                    const key = labelText.toLowerCase();
-
-                    if (!uniqueSuggestions.has(key)) {
-                        uniqueSuggestions.set(key, {
-                            id: `${properties.osm_id ?? key}-${key}`,
-                            name,
-                            label: labelText,
-                            type: properties.type,
-                        });
-                    }
-                }
-
-                const normalizedQuery = query.toLocaleLowerCase();
-
-                const rankedSuggestions = Array.from(uniqueSuggestions.values()).sort((a, b) => {
-                    const score = (item: LocationSuggestion) => {
-                        const name = item.name.toLocaleLowerCase();
-                        const label = item.label.toLocaleLowerCase();
-
-                        if (name === normalizedQuery) return 0;
-                        if (name.startsWith(normalizedQuery)) return 1;
-                        if (label.startsWith(normalizedQuery)) return 2;
-                        if (name.includes(normalizedQuery)) return 3;
-                        if (label.includes(normalizedQuery)) return 4;
-                        return 5;
-                    };
-
-                    return score(a) - score(b) || a.label.localeCompare(b.label);
-                });
-
-                setSuggestions(rankedSuggestions.slice(0, 6));
+                setSuggestions(await searchLocationSuggestions(query, controller.signal, 6));
             } catch (error) {
                 if (error instanceof Error && error.name !== "AbortError") {
                     setSuggestions([]);
@@ -164,7 +74,7 @@ function LocationAutocomplete({
 
     const selectSuggestion = (suggestion: LocationSuggestion) => {
         // Store only the selected place name; keep the full address in the dropdown for disambiguation.
-        onChange(suggestion.name);
+        onChange(suggestion.name, suggestion.coordinates);
         setSuggestions([]);
         setIsOpen(false);
         setSearchError("");
@@ -259,6 +169,19 @@ export default function Home() {
         setTripDetails((current) => ({ ...current, [key]: value }));
     };
 
+    const updateLocation = (
+        key: "origin" | "destination",
+        value: string,
+        coordinates?: Coordinates | null,
+    ) => {
+        setTripDetails((current) => ({
+            ...current,
+            [key]: value,
+            [key === "origin" ? "originCoordinates" : "destinationCoordinates"]:
+                coordinates ?? null,
+        }));
+    };
+
     const handlePlanSubmit = (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
         setSaveError("");
@@ -308,13 +231,13 @@ export default function Home() {
                                 label="From"
                                 value={tripDetails.origin}
                                 placeholder="City or airport"
-                                onChange={(value) => updateDetail("origin", value)}
+                                onChange={(value, coordinates) => updateLocation("origin", value, coordinates)}
                             />
                             <LocationAutocomplete
                                 label="To"
                                 value={tripDetails.destination}
                                 placeholder="City or destination"
-                                onChange={(value) => updateDetail("destination", value)}
+                                onChange={(value, coordinates) => updateLocation("destination", value, coordinates)}
                             />
                             <label className="border-b border-slate-200 p-4 text-sm font-semibold text-slate-600 lg:border-b-0 lg:border-r"><span className="flex items-center gap-1"><CalendarDays size={14} />Duration</span><select value={tripDetails.duration} onChange={(event) => updateDetail("duration", event.target.value)} className="mt-1 w-full bg-transparent text-base font-medium text-slate-900 outline-none"><option>2 Days</option><option>3 Days</option><option>4 Days</option><option>5 Days</option><option>7 Days</option></select></label>
                             <label className="border-b border-slate-200 p-4 text-sm font-semibold text-slate-600 lg:border-b-0 lg:border-r"><span className="flex items-center gap-1"><Users size={14} />Travellers</span><select value={tripDetails.travellers} onChange={(event) => updateDetail("travellers", event.target.value)} className="mt-1 w-full bg-transparent text-base font-medium text-slate-900 outline-none"><option>1 Adult</option><option>2 Adults</option><option>3 Adults</option><option>4 Adults</option><option>Family</option><option>Friends</option></select></label>

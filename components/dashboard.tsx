@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { defaultTripDetails, getTripDetails, saveTripDetails } from "@/lib/trip-details";
+import { fetchMappedPlaces } from "@/lib/places";
 
 
 import {
@@ -67,6 +68,9 @@ export default function Dashboard() {
     const [liveNearbyPlaces, setLiveNearbyPlaces] = useState<LiveNearbyPlace[]>([]);
     const [nearbyLoading, setNearbyLoading] = useState(false);
     const [nearbyError, setNearbyError] = useState("");
+    // Bumped by the "Try again" button so the nearby-places effect re-runs
+    // without changing the destination coordinates.
+    const [nearbyRefreshToken, setNearbyRefreshToken] = useState(0);
     const [selectedStyle, setSelectedStyle] = useState("Recommended");
     const [selectedDuration, setSelectedDuration] = useState(defaultTripDetails.duration);
     const [destinationSummary, setDestinationSummary] = useState<{ text: string; title: string; url: string } | null>(null);
@@ -248,32 +252,6 @@ export default function Dashboard() {
         }
 
         const controller = new AbortController();
-        const radiusMeters = 50000;
-        const query = `
-[out:json][timeout:20];
-(
-  node(around:${radiusMeters},${coordinates.lat},${coordinates.lon})[tourism~"^(attraction|museum|viewpoint|zoo|theme_park|gallery)$"];
-  way(around:${radiusMeters},${coordinates.lat},${coordinates.lon})[tourism~"^(attraction|museum|viewpoint|zoo|theme_park|gallery)$"];
-  relation(around:${radiusMeters},${coordinates.lat},${coordinates.lon})[tourism~"^(attraction|museum|viewpoint|zoo|theme_park|gallery)$"];
-  node(around:${radiusMeters},${coordinates.lat},${coordinates.lon})[historic~"^(monument|castle|fort|ruins|memorial|archaeological_site)$"];
-  way(around:${radiusMeters},${coordinates.lat},${coordinates.lon})[historic~"^(monument|castle|fort|ruins|memorial|archaeological_site)$"];
-  node(around:${radiusMeters},${coordinates.lat},${coordinates.lon})[natural~"^(beach|waterfall|cave|hot_spring)$"];
-  way(around:${radiusMeters},${coordinates.lat},${coordinates.lon})[natural~"^(beach|waterfall|cave|hot_spring)$"];
-  node(around:${radiusMeters},${coordinates.lat},${coordinates.lon})[leisure~"^(park|garden|nature_reserve)$"];
-  way(around:${radiusMeters},${coordinates.lat},${coordinates.lon})[leisure~"^(park|garden|nature_reserve)$"];
-);
-out center tags;
-`;
-
-        const distanceKm = (lat1: number, lon1: number, lat2: number, lon2: number) => {
-            const toRadians = (degrees: number) => degrees * Math.PI / 180;
-            const dLat = toRadians(lat2 - lat1);
-            const dLon = toRadians(lon2 - lon1);
-            const a =
-                Math.sin(dLat / 2) ** 2 +
-                Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) * Math.sin(dLon / 2) ** 2;
-            return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        };
 
         const loadNearbyPlaces = async () => {
             setNearbyLoading(true);
@@ -281,134 +259,27 @@ out center tags;
             setLiveNearbyPlaces([]);
 
             try {
-                // Overpass instances can temporarily return 502/503/504. Try a
-                // secondary public instance before showing the error state.
-                const endpoints = [
-                    "https://overpass-api.de/api/interpreter",
-                    "https://overpass.kumi.systems/api/interpreter",
-                ];
-                let data: {
-                    elements?: Array<{
-                        type: string;
-                        id: number;
-                        lat?: number;
-                        lon?: number;
-                        center?: { lat: number; lon: number };
-                        tags?: Record<string, string>;
-                    }>;
-                } | null = null;
-                let lastError: Error | null = null;
+                // One cached /api/places request powers every map-backed card, so this
+                // widget no longer sends its own heavy Overpass query from the browser.
+                const places = await fetchMappedPlaces(coordinates.lat, coordinates.lon, controller.signal);
 
-                for (const endpoint of endpoints) {
-                    if (controller.signal.aborted) throw new DOMException("Request aborted", "AbortError");
-                    try {
-                        const response = await fetch(endpoint, {
-                            method: "POST",
-                            headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
-                            body: new URLSearchParams({ data: query }).toString(),
-                            signal: controller.signal,
-                        });
-
-                        if (!response.ok) {
-                            const error = new Error(`Nearby places service returned ${response.status}.`);
-                            // Retry only on temporary server/rate-limit responses. Other
-                            // 4xx errors usually indicate a query/request problem.
-                            if ([429, 502, 503, 504].includes(response.status)) {
-                                lastError = error;
-                                continue;
-                            }
-                            throw error;
-                        }
-
-                        data = await response.json() as {
-                            elements?: Array<{
-                                type: string;
-                                id: number;
-                                lat?: number;
-                                lon?: number;
-                                center?: { lat: number; lon: number };
-                                tags?: Record<string, string>;
-                            }>;
-                        };
-                        break;
-                    } catch (error) {
-                        if (error instanceof Error && error.name === "AbortError") throw error;
-                        lastError = error instanceof Error ? error : new Error("Unknown nearby places error.");
-                        // Network/CORS errors may be endpoint-specific, so try the next instance.
-                    }
-                }
-
-                if (!data) throw lastError ?? new Error("All nearby places services failed.");
-
-                const candidates: Array<LiveNearbyPlace & { distanceValue: number }> = [];
-
-                for (const element of data.elements ?? []) {
-                    const tags = element.tags ?? {};
-                    const name = tags.name?.trim();
-                    const lat = element.lat ?? element.center?.lat;
-                    const lon = element.lon ?? element.center?.lon;
-                    if (!name || lat === undefined || lon === undefined ||
-                        !Number.isFinite(lat) || !Number.isFinite(lon)) continue;
-
-                    // Avoid ordinary commercial places even if their map data
-                    // accidentally includes a tourism tag.
-                    const building = tags.building?.toLowerCase();
-                    if (
-                        tags.shop ||
-                        tags.office ||
-                        tags.craft ||
-                        ["commercial", "retail", "office", "industrial"].includes(building ?? "")
-                    ) continue;
-
-                    const category = tags.tourism ?? tags.historic ?? tags.natural ?? tags.leisure ?? "attraction";
-                    const distance = distanceKm(coordinates.lat, coordinates.lon, lat, lon);
-                    if (!Number.isFinite(distance) || distance > radiusMeters / 1000) continue;
-
-                    candidates.push({
-                        id: `${element.type}-${element.id}`,
-                        name,
-                        distance: `${distance.toFixed(distance < 10 ? 1 : 0)} km away`,
-                        duration: "Straight-line distance",
-                        recommendation: category.replaceAll("_", " "),
-                        lat,
-                        lon,
-                        distanceValue: distance,
-                    });
-                }
-
-                // Sort before deduplication so the nearest mapped version is kept.
-                candidates.sort((a, b) => a.distanceValue - b.distanceValue);
-                const places: LiveNearbyPlace[] = [];
-                const seenIds = new Set<string>();
-                const seenNamedLocations: Array<{ name: string; lat: number; lon: number }> = [];
-
-                for (const place of candidates) {
-                    if (seenIds.has(place.id)) continue;
-                    seenIds.add(place.id);
-
-                    const normalizedName = place.name.toLocaleLowerCase().replace(/\\s+/g, " ").trim();
-                    const duplicateNearby = seenNamedLocations.some((existing) => {
-                        if (existing.name !== normalizedName) return false;
-                        return distanceKm(existing.lat, existing.lon, place.lat, place.lon) < 0.25;
-                    });
-                    if (duplicateNearby) continue;
-
-                    seenNamedLocations.push({ name: normalizedName, lat: place.lat, lon: place.lon });
-                    places.push({
-                        id: place.id,
-                        name: place.name,
-                        distance: place.distance,
-                        duration: place.duration,
-                        recommendation: place.recommendation,
-                        lat: place.lat,
-                        lon: place.lon,
-                    });
-                }
-
-                setLiveNearbyPlaces(places.slice(0, 30));
+                setLiveNearbyPlaces(
+                    places
+                        .filter((place) => place.kind === "attraction")
+                        .slice(0, 30)
+                        .map((place) => ({
+                            id: place.id,
+                            name: place.name,
+                            distance: `${place.distanceKm.toFixed(place.distanceKm < 10 ? 1 : 0)} km away`,
+                            duration: "Straight-line distance",
+                            recommendation: place.category.replaceAll("_", " "),
+                            lat: place.lat,
+                            lon: place.lon,
+                        })),
+                );
             } catch (error) {
                 if (error instanceof Error && error.name !== "AbortError") {
-                    setNearbyError("Nearby places could not be loaded right now. Please try again later.");
+                    setNearbyError("The public map service is busy right now, so nearby attractions could not be loaded. This usually clears within a minute.");
                 }
             } finally {
                 if (!controller.signal.aborted) setNearbyLoading(false);
@@ -417,7 +288,7 @@ out center tags;
 
         void loadNearbyPlaces();
         return () => controller.abort();
-    }, [tripDetails.destinationCoordinates?.lat, tripDetails.destinationCoordinates?.lon]);
+    }, [tripDetails.destinationCoordinates?.lat, tripDetails.destinationCoordinates?.lon, nearbyRefreshToken]);
 
     const updateSelectedDuration = (duration: string) => {
         setSelectedDuration(duration);
@@ -591,7 +462,9 @@ out center tags;
                     }
                 }
 
-                if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+                const latitude = Number(lat);
+                const longitude = Number(lon);
+                if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
                     setDynamicGuide({
                         seasons: [],
                         highlights: [],
@@ -602,15 +475,18 @@ out center tags;
                     return;
                 }
 
-                const [weatherResult, mapResult] = await Promise.allSettled([
+                const [weatherResult, placesResult] = await Promise.allSettled([
                     (async () => {
                         // Recent historical climate provides an estimate, not a forecast.
+                        // Two years of daily readings give a stable monthly average while
+                        // keeping the response roughly a third of the old three-year pull.
+                        const referenceYear = new Date().getFullYear() - 1;
                         const url = new URL("https://archive-api.open-meteo.com/v1/archive");
                         url.search = new URLSearchParams({
-                            latitude: String(lat),
-                            longitude: String(lon),
-                            start_date: `${new Date().getFullYear() - 3}-01-01`,
-                            end_date: `${new Date().getFullYear() - 1}-12-31`,
+                            latitude: String(latitude),
+                            longitude: String(longitude),
+                            start_date: `${referenceYear - 1}-01-01`,
+                            end_date: `${referenceYear}-12-31`,
                             daily: "temperature_2m_mean,precipitation_sum",
                             timezone: "auto",
                         }).toString();
@@ -620,48 +496,9 @@ out center tags;
                             daily?: { time?: string[]; temperature_2m_mean?: Array<number | null>; precipitation_sum?: Array<number | null> };
                         };
                     })(),
-                    (async () => {
-                        const query = `
-[out:json][timeout:20];
-(
-  node(around:12000,${lat},${lon})[tourism~"^(attraction|museum|viewpoint|zoo|theme_park|gallery|hotel|hostel|guest_house|motel|apartment|chalet|camp_site)$"];
-  way(around:12000,${lat},${lon})[tourism~"^(attraction|museum|viewpoint|zoo|theme_park|gallery|hotel|hostel|guest_house|motel|apartment|chalet|camp_site)$"];
-  node(around:12000,${lat},${lon})[historic~"^(monument|castle|fort|ruins|memorial|archaeological_site)$"];
-  way(around:12000,${lat},${lon})[historic~"^(monument|castle|fort|ruins|memorial|archaeological_site)$"];
-  node(around:12000,${lat},${lon})[natural~"^(beach|waterfall|cave|hot_spring)$"];
-  way(around:12000,${lat},${lon})[natural~"^(beach|waterfall|cave|hot_spring)$"];
-  node(around:12000,${lat},${lon})[leisure~"^(park|garden|nature_reserve)$"];
-  way(around:12000,${lat},${lon})[leisure~"^(park|garden|nature_reserve)$"];
-  node(around:12000,${lat},${lon})[amenity~"^(restaurant|food_court|cafe)$"];
-  way(around:12000,${lat},${lon})[amenity~"^(restaurant|food_court|cafe)$"];
-  node(around:30000,${lat},${lon})[railway~"^(station|halt)$"];
-  node(around:30000,${lat},${lon})[amenity~"^(bus_station|ferry_terminal)$"];
-  node(around:30000,${lat},${lon})[aeroway="aerodrome"];
-);
-out center tags;
-`;
-                        const endpoints = [
-                            "https://overpass-api.de/api/interpreter",
-                            "https://overpass.kumi.systems/api/interpreter",
-                        ];
-                        let lastError: unknown;
-                        for (const endpoint of endpoints) {
-                            try {
-                                const response = await fetch(endpoint, {
-                                    method: "POST",
-                                    headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
-                                    body: new URLSearchParams({ data: query }).toString(),
-                                    signal: controller.signal,
-                                });
-                                if (!response.ok) throw new Error(`Map service returned ${response.status}`);
-                                return await response.json() as { elements?: Array<{ tags?: Record<string, string> }> };
-                            } catch (error) {
-                                if (error instanceof Error && error.name === "AbortError") throw error;
-                                lastError = error;
-                            }
-                        }
-                        throw lastError ?? new Error("Map data unavailable");
-                    })(),
+                    // Cached server route: a single merged Overpass query feeds the
+                    // highlights, stays, food and transport sections below.
+                    fetchMappedPlaces(latitude, longitude, controller.signal),
                 ]);
 
                 const seasons: DynamicSeason[] = [];
@@ -732,34 +569,38 @@ out center tags;
                     }
                 }
 
-                const tags = mapResult.status === "fulfilled"
-                    ? (mapResult.value.elements ?? []).map((element) => element.tags ?? {})
-                    : [];
-                const stays = tags
-                    .filter((tag) => tag.name && ["hotel", "hostel", "guest_house", "motel", "apartment", "chalet", "camp_site"].includes(tag.tourism ?? ""))
-                    .map((tag, index) => ({
-                        name: tag.name!,
-                        description: `${tag.tourism?.replaceAll("_", " ")} listed in OpenStreetMap near ${destination}. Verify location, reviews, availability and rates.`,
+                const places = placesResult.status === "fulfilled" ? placesResult.value : [];
+                const transitLabels: Record<string, string> = {
+                    railway_station: "Railway station",
+                    bus_station: "Bus station",
+                    ferry_terminal: "Ferry terminal",
+                    aerodrome: "Airport",
+                };
+
+                // Trip Highlights only talks about mapped places close to the destination.
+                const nearbyAttractions = places.filter(
+                    (place) => place.kind === "attraction" && place.distanceKm <= 12,
+                );
+
+                const stays = places
+                    .filter((place) => place.kind === "stay")
+                    .map((place, index) => ({
+                        name: place.name,
+                        description: `${place.category.replaceAll("_", " ")} listed in OpenStreetMap near ${destination}. Verify location, reviews, availability and rates.`,
                         price: "Check current rates",
                         image: "",
                         recommended: index === 0,
                     }))
-                    .filter((item, index, all) => all.findIndex((other) => other.name.toLowerCase() === item.name.toLowerCase()) === index)
                     .slice(0, 5);
 
-                const foods = [...new Set(tags
-                    .filter((tag) => tag.amenity && ["restaurant", "food_court", "cafe"].includes(tag.amenity) && tag.cuisine)
-                    .map((tag) => tag.cuisine!.split(";").map((value) => value.trim()).filter(Boolean))
-                    .flat()
+                const foods = [...new Set(places
+                    .filter((place) => place.kind === "food" && place.cuisine)
+                    .flatMap((place) => place.cuisine!.split(";").map((value) => value.trim()).filter(Boolean))
                     .filter(Boolean))].slice(0, 8);
 
-                const transitTypes = [...new Set(tags.map((tag) => {
-                    if (tag.railway === "station" || tag.railway === "halt") return "Railway station";
-                    if (tag.amenity === "bus_station") return "Bus station";
-                    if (tag.amenity === "ferry_terminal") return "Ferry terminal";
-                    if (tag.aeroway === "aerodrome") return "Airport";
-                    return "";
-                }).filter(Boolean))];
+                const transitTypes = [...new Set(places
+                    .map((place) => (place.kind === "transit" ? transitLabels[place.category] : ""))
+                    .filter(Boolean))];
                 const transport: DynamicGuide["transport"] = transitTypes.slice(0, 3).map((type, index) => ({
                     title: index === 0 ? "Mapped local option" : type,
                     subtitle: type,
@@ -776,14 +617,7 @@ out center tags;
                     );
                 }
 
-                const attractionTags = tags.filter((tag) =>
-                    Boolean(tag.name) && (
-                        (tag.tourism && ["attraction", "museum", "viewpoint", "gallery", "zoo", "theme_park"].includes(tag.tourism)) ||
-                        Boolean(tag.historic) || Boolean(tag.natural) ||
-                        ["park", "garden", "nature_reserve"].includes(tag.leisure ?? "")
-                    )
-                );
-                const attractionNames = [...new Set(attractionTags.map((tag) => tag.name!.trim()))].slice(0, 3);
+                const attractionNames = [...new Set(nearbyAttractions.map((place) => place.name.trim()))].slice(0, 3);
 
                 // Keep highlights useful: prioritize actual named places and only show categories
                 // when there is no reliable destination-specific listing for that category.
@@ -1188,72 +1022,80 @@ out center tags;
                 {/* =====================================================
                     RIGHT SIDE
                 ===================================================== */}
-                <div className="flex min-h-0 flex-col gap-4 xl:h-full xl:max-h-full xl:self-stretch">
+                {/*
+                    This column stays in flow but its content is taken out of it at xl, so it
+                    contributes no height to the grid row. The row height is then defined by the
+                    left column (hero + trip plan cards), which keeps the bottom of the Trip
+                    Highlights card level with the bottom of the three trip plan cards. Below xl
+                    the column simply stacks in normal flow.
+                */}
+                <div className="flex min-h-0 flex-col gap-4 xl:relative xl:self-stretch">
+                    <div className="flex min-h-0 flex-col gap-4 xl:absolute xl:inset-0">
 
-                    {/* BEST TIME */}
-                    <div className="shrink-0 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                        <h2 className="text-sm font-bold text-slate-800">
-                            Best Time vs Cheapest Time
-                        </h2>
+                        {/* BEST TIME */}
+                        <div className="shrink-0 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                            <h2 className="text-sm font-bold text-slate-800">
+                                Best Time vs Cheapest Time
+                            </h2>
 
-                        <div className="mt-2">
-                            {bestTimes.length === 0 && (
-                                <p className="py-3 text-xs text-slate-500">
-                                    {guideLoading ? `Loading climate history for ${tripDetails.destination}…` : `Historical seasonal guidance is unavailable for ${tripDetails.destination}.`}
-                                </p>
-                            )}
-                            {bestTimes.slice(0, 3).map((time, index) => {
-                                const Icon = time.icon;
-                                return (
-                                    <div
-                                        key={time.title}
-                                        className={`flex gap-3 py-2.5 ${index !== Math.min(bestTimes.length, 3) - 1 ? "border-b border-slate-100" : ""}`}
-                                    >
-                                        <Icon size={17} className={`mt-0.5 shrink-0 ${time.iconClass}`} aria-hidden="true" />
-                                        <div className="min-w-0 flex-1">
-                                            <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
-                                                <p className="text-xs font-semibold text-slate-800">{time.title}</p>
-                                                <span className={`whitespace-nowrap text-xs font-semibold ${time.monthClass}`}>{time.months}</span>
+                            <div className="mt-2">
+                                {bestTimes.length === 0 && (
+                                    <p className="py-3 text-xs text-slate-500">
+                                        {guideLoading ? `Loading climate history for ${tripDetails.destination}…` : `Historical seasonal guidance is unavailable for ${tripDetails.destination}.`}
+                                    </p>
+                                )}
+                                {bestTimes.slice(0, 3).map((time, index) => {
+                                    const Icon = time.icon;
+                                    return (
+                                        <div
+                                            key={time.title}
+                                            className={`flex gap-3 py-2.5 ${index !== Math.min(bestTimes.length, 3) - 1 ? "border-b border-slate-100" : ""}`}
+                                        >
+                                            <Icon size={17} className={`mt-0.5 shrink-0 ${time.iconClass}`} aria-hidden="true" />
+                                            <div className="min-w-0 flex-1">
+                                                <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
+                                                    <p className="text-xs font-semibold text-slate-800">{time.title}</p>
+                                                    <span className={`whitespace-nowrap text-xs font-semibold ${time.monthClass}`}>{time.months}</span>
+                                                </div>
                                             </div>
-                                            <p className="mt-1 text-[11px] leading-4 text-slate-500">{time.description}</p>
                                         </div>
-                                    </div>
-                                );
-                            })}
-                            <p className="mt-1 text-[10px] leading-4 text-slate-400">Climate estimates are not price predictions. Verify forecasts, fares and accommodation prices before booking.</p>
+                                    );
+                                })}
+                            </div>
                         </div>
-                    </div>
 
-                    {/* TRIP HIGHLIGHTS */}
-                    <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                        <h2 className="shrink-0 text-sm font-bold text-slate-800">Trip Highlights</h2>
+                        {/* TRIP HIGHLIGHTS */}
+                        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                            <h2 className="shrink-0 text-sm font-bold text-slate-800">Trip Highlights</h2>
 
-                        <div className="mt-2 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
-                            {guideLoading && !destinationGuide && (
-                                <p role="status" className="py-3 text-xs text-slate-500">Finding highlights for {tripDetails.destination}…</p>
-                            )}
+                            <div className="mt-2 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
+                                {guideLoading && !destinationGuide && (
+                                    <p role="status" className="py-3 text-xs text-slate-500">Finding highlights for {tripDetails.destination}…</p>
+                                )}
 
-                            {!guideLoading && (!destinationGuide || destinationGuide.highlights.length === 0) && (
-                                <p className="py-3 text-xs text-slate-500">No mapped highlight details were returned for {tripDetails.destination}. Try again later or check the destination spelling.</p>
-                            )}
+                                {!guideLoading && (!destinationGuide || destinationGuide.highlights.length === 0) && (
+                                    <p className="py-3 text-xs text-slate-500">No mapped highlight details were returned for {tripDetails.destination}. Try again later or check the destination spelling.</p>
+                                )}
 
-                            {destinationGuide?.highlights && destinationGuide.highlights.length > 0 && (
-                                <ul className="divide-y divide-slate-100">
-                                    {destinationGuide.highlights.slice(0, 5).map((highlight) => {
-                                        const Icon = highlight.icon;
-                                        return (
-                                            <li key={highlight.title} className="flex items-start gap-3 py-2.5 first:pt-1">
-                                                <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700">
-                                                    <Icon size={15} aria-hidden="true" />
-                                                </span>
-                                                <span className="min-w-0 text-xs leading-5 text-slate-700">{highlight.title}</span>
-                                            </li>
-                                        );
-                                    })}
-                                </ul>
-                            )}
-                            <p className="mt-2 text-[10px] leading-4 text-slate-400">Based on available public map listings. Coverage varies by destination; verify details before travelling.</p>
+                                {destinationGuide?.highlights && destinationGuide.highlights.length > 0 && (
+                                    <ul className="divide-y divide-slate-100">
+                                        {destinationGuide.highlights.slice(0, 5).map((highlight) => {
+                                            const Icon = highlight.icon;
+                                            return (
+                                                <li key={highlight.title} className="flex items-start gap-3 py-2.5 first:pt-1">
+                                                    <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700">
+                                                        <Icon size={15} aria-hidden="true" />
+                                                    </span>
+                                                    <span className="min-w-0 text-xs leading-5 text-slate-700">{highlight.title}</span>
+                                                </li>
+                                            );
+                                        })}
+                                    </ul>
+                                )}
+                                <p className="mt-2 text-[10px] leading-4 text-slate-400">Based on available public map listings. Coverage varies by destination; verify details before travelling.</p>
+                            </div>
                         </div>
+
                     </div>
                 </div>
             </div>
@@ -1520,7 +1362,16 @@ out center tags;
                             <p role="status" className="text-xs text-slate-500">Finding nearby attractions…</p>
                         )}
                         {nearbyError && (
-                            <p role="status" className="text-xs text-amber-700">{nearbyError}</p>
+                            <div role="status" className="rounded-lg bg-amber-50 p-3">
+                                <p className="text-xs text-amber-800">{nearbyError}</p>
+                                <button
+                                    type="button"
+                                    onClick={() => setNearbyRefreshToken((token) => token + 1)}
+                                    className="mt-2 rounded-lg bg-amber-600 px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-amber-700"
+                                >
+                                    Try again
+                                </button>
+                            </div>
                         )}
                         {!nearbyLoading && !nearbyError && !tripDetails.destinationCoordinates && (
                             <p className="text-xs text-slate-500">Select the destination from the autocomplete suggestions to find nearby attractions.</p>

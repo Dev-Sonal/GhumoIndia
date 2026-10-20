@@ -210,6 +210,15 @@ async function fetchPhotonSuggestions(query: string, limit: number): Promise<Loc
         }
     }
 
+    return rankSuggestions([...unique.values()], query).slice(0, limit);
+}
+
+/** Relevance order shared by every geocoder: exact name, prefix, then substring. */
+function rankSuggestions(
+    suggestions: LocationSuggestion[],
+    query: string,
+    positionOf?: (item: LocationSuggestion) => number,
+): LocationSuggestion[] {
     const normalized = query.toLocaleLowerCase();
     const score = (item: LocationSuggestion) => {
         const name = item.name.toLocaleLowerCase();
@@ -220,8 +229,237 @@ async function fetchPhotonSuggestions(query: string, limit: number): Promise<Loc
         if (name.includes(normalized)) return 3;
         return 4;
     };
+    // Pilgora plans trips in India: for equally good name matches an Indian
+    // place wins over e.g. "Goa, Dagestan" or "Delhi, Iowa". Foreign matches
+    // still surface when nothing in India matches.
+    const country = (item: LocationSuggestion) => /(?:^|,)\s*india$/i.test(item.label) ? 0 : 1;
 
-    return [...unique.values()].sort((left, right) => score(left) - score(right) || left.label.localeCompare(right.label)).slice(0, limit);
+    return suggestions.sort((left, right) => {
+        const byName = score(left) - score(right);
+        if (byName) return byName;
+        const byCountry = country(left) - country(right);
+        if (byCountry) return byCountry;
+        // Providers order results by importance/population — "Shimla, Himachal
+        // Pradesh" must outrank a smaller namesake before alphabetical order.
+        if (positionOf) {
+            const byPosition = positionOf(left) - positionOf(right);
+            if (byPosition) return byPosition;
+        }
+        return left.label.localeCompare(right.label);
+    });
+}
+
+/** Label in the same shape for every provider, so merged lists read consistently. */
+function buildLabel(name: string, parts: Array<string | undefined | null>): string {
+    const seen = new Set<string>();
+    return [name, ...parts]
+        .map((part) => part?.trim() ?? "")
+        .filter((part) => {
+            if (!part) return false;
+            const key = part.toLocaleLowerCase();
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        })
+        .join(", ");
+}
+
+/** Same place returned by two providers collapses into one dropdown row. */
+function suggestionKey(item: LocationSuggestion): string {
+    const name = item.name.toLocaleLowerCase().replace(/\s+/g, " ").trim();
+    // Compare name + the stable tail of the label (state, country). One
+    // provider may add a district the others omit; that must not create a
+    // second row for the same town, while the same name in another state
+    // stays a separate suggestion.
+    const parts = item.label.split(",").map((part) => part.trim().toLocaleLowerCase()).filter(Boolean);
+    const tail = parts.slice(-2).join(",");
+    return tail ? `${name}|${tail}` : `${name}|${item.label.toLocaleLowerCase()}`;
+}
+
+const GEOCODER_TIMEOUT_MS = 6_000;
+// Once one provider answers, give the others a brief window to enrich the
+// merged list — but never let a hanging provider delay the dropdown.
+const GEOCODER_GRACE_MS = 900;
+
+/** Nominatim's public usage policy allows ~1 request/second per IP. */
+const NOMINATIM_MIN_INTERVAL_MS = 1_100;
+let lastNominatimStartedAt = 0;
+
+async function fetchNominatimSuggestions(query: string, limit: number): Promise<LocationSuggestion[]> {
+    // Keyboard bursts must not hammer the public instance; the other two
+    // providers answer in the meantime.
+    const now = Date.now();
+    if (now - lastNominatimStartedAt < NOMINATIM_MIN_INTERVAL_MS) return [];
+    lastNominatimStartedAt = now;
+
+    const params = new URLSearchParams({
+        q: query,
+        format: "jsonv2",
+        limit: String(limit),
+        addressdetails: "1",
+    });
+    const response = await fetchWithTimeout(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
+        headers: {
+            Accept: "application/json",
+            "User-Agent": "Pilgora/1.0 travel-planning application",
+        },
+    }, GEOCODER_TIMEOUT_MS);
+    if (!response.ok) throw new Error("Location search is unavailable.");
+
+    const results = await response.json() as Array<{
+        lat?: string;
+        lon?: string;
+        name?: string;
+        display_name?: string;
+        type?: string;
+        address?: Record<string, string | undefined>;
+    }>;
+
+    const suggestions: LocationSuggestion[] = [];
+    for (const item of results) {
+        const lat = Number(item.lat);
+        const lon = Number(item.lon);
+        const name = item.name?.trim() || item.display_name?.split(",")[0]?.trim();
+        if (!name || !Number.isFinite(lat) || !Number.isFinite(lon)
+            || Math.abs(lat) > 90 || Math.abs(lon) > 180) continue;
+
+        const address = item.address ?? {};
+        suggestions.push({
+            id: `nominatim:${lat},${lon}`,
+            name,
+            label: buildLabel(name, [
+                address.city ?? address.town ?? address.village,
+                address.state,
+                address.country,
+            ]),
+            type: item.type,
+            coordinates: { lat, lon },
+        });
+    }
+
+    return suggestions;
+}
+
+async function fetchOpenMeteoSuggestions(query: string, limit: number): Promise<LocationSuggestion[]> {
+    const params = new URLSearchParams({
+        name: query,
+        count: String(limit),
+        language: "en",
+        format: "json",
+    });
+    const response = await fetchWithTimeout(
+        `https://geocoding-api.open-meteo.com/v1/search?${params.toString()}`,
+        {},
+        GEOCODER_TIMEOUT_MS,
+    );
+    if (!response.ok) throw new Error("Location search is unavailable.");
+
+    const payload = await response.json() as {
+        results?: Array<{
+            id?: number;
+            name?: string;
+            latitude?: number;
+            longitude?: number;
+            country?: string;
+            admin1?: string;
+            admin2?: string;
+            feature_code?: string;
+        }>;
+    };
+
+    const suggestions: LocationSuggestion[] = [];
+    for (const item of payload.results ?? []) {
+        const name = item.name?.trim();
+        const lat = item.latitude;
+        const lon = item.longitude;
+        if (!name || typeof lat !== "number" || typeof lon !== "number"
+            || !Number.isFinite(lat) || !Number.isFinite(lon)
+            || Math.abs(lat) > 90 || Math.abs(lon) > 180) continue;
+
+        suggestions.push({
+            id: `open-meteo:${item.id ?? `${lat},${lon}`}`,
+            name,
+            label: buildLabel(name, [item.admin2, item.admin1, item.country]),
+            type: item.feature_code,
+            coordinates: { lat, lon },
+        });
+    }
+
+    return suggestions;
+}
+
+/**
+ * Photon, Nominatim and Open-Meteo geocoding run on independent infrastructure.
+ * Whichever answers first, the dropdown works — providers that hang or fail are
+ * skipped instead of holding up the merged result.
+ */
+async function searchGeocoders(query: string, limit: number): Promise<LocationSuggestion[]> {
+    const providers = [fetchPhotonSuggestions, fetchNominatimSuggestions, fetchOpenMeteoSuggestions];
+    const attempts = providers.map((provider) => provider(query, limit).then(
+        (suggestions) => ({ ok: true as const, suggestions }),
+        (error: unknown) => ({ ok: false as const, error }),
+    ));
+
+    // Indexed by provider, not by arrival order: each provider's own ranking
+    // (importance, population) is its strongest relevance signal.
+    const batches: Array<LocationSuggestion[] | null> = providers.map(() => null);
+    let answered = 0;
+    let lastError: unknown;
+
+    await new Promise<void>((resolve) => {
+        let remaining = attempts.length;
+        attempts.forEach((attempt, index) => {
+            void attempt.then((outcome) => {
+                remaining -= 1;
+                if (outcome.ok) {
+                    batches[index] = outcome.suggestions;
+                    answered += 1;
+                    setTimeout(resolve, GEOCODER_GRACE_MS);
+                } else {
+                    lastError = outcome.error;
+                }
+                if (remaining === 0) resolve();
+            });
+        });
+    });
+
+    const merged = new Map<string, LocationSuggestion>();
+    const ranks = new Map<string, Array<number | undefined>>();
+    batches.forEach((batch, providerIndex) => {
+        batch?.forEach((suggestion, position) => {
+            const key = suggestionKey(suggestion);
+            let tuple = ranks.get(key);
+            if (!tuple) {
+                tuple = new Array<number | undefined>(providers.length).fill(undefined);
+                ranks.set(key, tuple);
+            }
+            if (tuple[providerIndex] === undefined) tuple[providerIndex] = position;
+            if (!merged.has(key)) merged.set(key, suggestion);
+        });
+    });
+
+    // Fold each position tuple into one integer (Photon's slot most
+    // significant), so ties resolve by Photon's verdict first, then
+    // Nominatim's, then Open-Meteo's — e.g. Nominatim ranks the famous
+    // "Manali, Himachal Pradesh" above a larger Tamil Nadu namesake that
+    // Open-Meteo sorts first by population.
+    const base = limit + 1;
+    const precedence = new Map<string, number>();
+    for (const [key, tuple] of ranks) {
+        precedence.set(key, tuple.reduce<number>((acc, position) => acc * base + (position ?? limit), 0));
+    }
+
+    // No provider answered at all → outage. A provider that answered with
+    // nothing is a legitimate "no matches" and must stay an empty list.
+    if (answered === 0) {
+        throw lastError instanceof Error ? lastError : new Error("Location search is unavailable.");
+    }
+
+    return rankSuggestions(
+        [...merged.values()],
+        query,
+        (item) => precedence.get(suggestionKey(item)) ?? Number.MAX_SAFE_INTEGER,
+    ).slice(0, limit);
 }
 
 export async function getLocationSuggestions(query: string, limit = 8): Promise<LocationSuggestion[]> {
@@ -229,7 +467,7 @@ export async function getLocationSuggestions(query: string, limit = 8): Promise<
     if (normalizedQuery.length < 2) return [];
     const normalizedLimit = Math.max(1, Math.min(limit, 8));
     return cached(`locations:${normalizedQuery.toLocaleLowerCase()}:${normalizedLimit}`, 10 * 60_000, () =>
-        fetchPhotonSuggestions(normalizedQuery, normalizedLimit),
+        searchGeocoders(normalizedQuery, normalizedLimit),
     );
 }
 
@@ -238,34 +476,14 @@ async function geocodeDestination(destination: string): Promise<{
     displayName: string | null;
     isAmbiguous: boolean;
 }> {
-    const params = new URLSearchParams({
-        q: destination,
-        format: "jsonv2",
-        limit: "5",
-        addressdetails: "1",
-    });
-    const response = await fetchWithTimeout(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
-        headers: {
-            Accept: "application/json",
-            "User-Agent": "Pilgora/1.0 travel-planning application",
-        },
-    });
-    if (!response.ok) throw new Error("Destination lookup is unavailable.");
-
-    const results = await response.json() as Array<{ lat?: string; lon?: string; display_name?: string }>;
-    const matches = results
-        .map((item) => ({
-            lat: Number(item.lat),
-            lon: Number(item.lon),
-            displayName: item.display_name ?? null,
-        }))
-        .filter((item) => Number.isFinite(item.lat) && Number.isFinite(item.lon)
-            && Math.abs(item.lat) <= 90 && Math.abs(item.lon) <= 180);
+    // Same multi-provider search as the autocomplete, so a typed destination
+    // resolves even when a single geocoder is down.
+    const matches = (await getLocationSuggestions(destination, 5)).filter((match) => match.coordinates);
     const first = matches[0];
 
     return {
-        coordinates: first ? { lat: first.lat, lon: first.lon } : null,
-        displayName: first?.displayName ?? null,
+        coordinates: first?.coordinates ?? null,
+        displayName: first?.label ?? null,
         isAmbiguous: matches.length > 1,
     };
 }

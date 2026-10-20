@@ -435,23 +435,26 @@ export default function Dashboard() {
 
                 // Resolve manually typed destinations too; autocomplete is not mandatory.
                 if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
-                    const geoUrl = new URL("https://nominatim.openstreetmap.org/search");
-                    geoUrl.search = new URLSearchParams({
-                        q: `${destination}, India`,
-                        format: "jsonv2",
-                        limit: "1",
-                        addressdetails: "1",
-                    }).toString();
-                    const geoResponse = await fetch(geoUrl.toString(), {
-                        signal: controller.signal,
-                        headers: { Accept: "application/json" },
-                    });
+                    // /api/locations races several geocoders server-side, so this
+                    // keeps working even when a single geocoder is down.
+                    const geoResponse = await fetch(
+                        `/api/locations?q=${encodeURIComponent(destination)}&limit=5`,
+                        { signal: controller.signal },
+                    );
                     if (geoResponse.ok) {
-                        const geo = await geoResponse.json() as Array<{ lat?: string; lon?: string; display_name?: string }>;
-                        const match = geo[0];
-                        if (match?.lat && match?.lon) {
-                            lat = Number(match.lat);
-                            lon = Number(match.lon);
+                        const geo = await geoResponse.json() as {
+                            suggestions?: Array<{ label?: string; coordinates?: { lat: number; lon: number } | null }>;
+                        };
+                        const located = (geo.suggestions ?? []).filter(
+                            (item) => item.coordinates
+                                && Number.isFinite(item.coordinates.lat)
+                                && Number.isFinite(item.coordinates.lon),
+                        );
+                        // Prefer an Indian match to keep the earlier India bias.
+                        const match = located.find((item) => /,\s*India$/i.test(item.label ?? "")) ?? located[0];
+                        if (match?.coordinates) {
+                            lat = match.coordinates.lat;
+                            lon = match.coordinates.lon;
                             setTripDetails((current) => {
                                 if (current.destination.trim().toLowerCase() !== destination.toLowerCase()) return current;
                                 const updated = { ...current, destinationCoordinates: { lat: Number(lat), lon: Number(lon) } };
